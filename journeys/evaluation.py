@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 import time
 from textwrap import dedent
@@ -11,6 +12,23 @@ import streamlit as st
 import yaml
 from loguru import logger
 from snowflake.connector.pandas_tools import write_pandas
+
+# Default Qwen model for LLM Judge
+QWEN_JUDGE_MODEL = os.environ.get("QWEN_JUDGE_MODEL", "qwen-max")
+
+
+def _is_china_region_eval() -> bool:
+    """Check if running in China region using cached session state."""
+    # Check cache first
+    if "is_china_region" in st.session_state:
+        return st.session_state["is_china_region"]
+    
+    # Check environment variable
+    if os.environ.get("USE_QWEN_FOR_CHINA", "").lower() == "true":
+        return True
+    
+    # Will be set by chat.py when connection is established
+    return False
 
 from app_utils.chat import send_message
 from app_utils.shared_utils import (
@@ -159,10 +177,18 @@ def _llm_judge(frame: pd.DataFrame, max_frame_size=200) -> pd.DataFrame:
         table_name, table_type="temporary"
     )
 
-    query = f"""
-    SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-large2', {col_name}) AS LLM_JUDGE
-    FROM {conn.database}.{conn.schema}.{table_name}
-    """
+    # Use Qwen for China region, otherwise use Cortex
+    if _is_china_region_eval():
+        query = f"""
+        SELECT CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{QWEN_JUDGE_MODEL}', {col_name}) AS LLM_JUDGE
+        FROM {conn.database}.{conn.schema}.{table_name}
+        """
+    else:
+        query = f"""
+        SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-large2', {col_name}) AS LLM_JUDGE
+        FROM {conn.database}.{conn.schema}.{table_name}
+        """
+    
     cursor = conn.cursor()
     cursor.execute(query)
     llm_judge_frame = cursor.fetch_pandas_all()

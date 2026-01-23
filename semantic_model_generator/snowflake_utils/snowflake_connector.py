@@ -1,4 +1,5 @@
 import concurrent.futures
+import os
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, TypeVar, Union
@@ -17,6 +18,36 @@ ConnectionType = TypeVar("ConnectionType")
 # Append this to the end of the auto-generated comments to indicate that the comment was auto-generated.
 AUTOGEN_TOKEN = "__"
 _autogen_model = "llama3-8b"
+
+# Default Qwen model for description generation
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-turbo")
+
+
+def _is_china_region_connector(conn: SnowflakeConnection) -> bool:
+    """Check if running in China region by examining connection."""
+    # Check environment variable first
+    if os.environ.get("USE_QWEN_FOR_CHINA", "").lower() == "true":
+        return True
+    
+    # Check connection host for China region indicators
+    try:
+        host = conn.host or ""
+        if any(x in host.lower() for x in [".cn", "cn-", "china", "amazonaws.com.cn"]):
+            return True
+    except Exception:
+        pass
+    
+    # Check region from Snowflake
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT CURRENT_REGION()")
+        region = cursor.fetchone()[0] or ""
+        if "cn-" in region.lower() or "china" in region.lower():
+            return True
+    except Exception:
+        pass
+    
+    return False
 
 # This is the raw column name from snowflake information schema or desc table
 _COMMENT_COL = "COMMENT"
@@ -96,7 +127,13 @@ def _get_table_comment(
                 .replace("'", "\\'")
             )
             comment_prompt = f"Here is a table with below DDL: {tbl_ddl} \nPlease provide a business description for the table. Only return the description without any other text."
-            complete_sql = f"select SNOWFLAKE.CORTEX.COMPLETE('{_autogen_model}', '{comment_prompt}')"
+            
+            # Use Qwen for China region, otherwise use Cortex
+            if _is_china_region_connector(conn):
+                complete_sql = f"select CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{QWEN_MODEL}', '{comment_prompt}')"
+            else:
+                complete_sql = f"select SNOWFLAKE.CORTEX.COMPLETE('{_autogen_model}', '{comment_prompt}')"
+            
             cmt = conn.cursor().execute(complete_sql).fetchall()[0][0]  # type: ignore[union-attr]
             return str(cmt + AUTOGEN_TOKEN)
         except Exception as e:
@@ -118,7 +155,13 @@ type: {column_row['DATA_TYPE']};
 values: {';'.join(column_values) if column_values else ""};
 Please provide a business description for the column. Only return the description without any other text."""
             comment_prompt = comment_prompt.replace("'", "\\'")
-            complete_sql = f"select SNOWFLAKE.CORTEX.COMPLETE('{_autogen_model}', '{comment_prompt}')"
+            
+            # Use Qwen for China region, otherwise use Cortex
+            if _is_china_region_connector(conn):
+                complete_sql = f"select CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{QWEN_MODEL}', '{comment_prompt}')"
+            else:
+                complete_sql = f"select SNOWFLAKE.CORTEX.COMPLETE('{_autogen_model}', '{comment_prompt}')"
+            
             cmt = conn.cursor().execute(complete_sql).fetchall()[0][0]  # type: ignore[union-attr]
             return str(cmt + AUTOGEN_TOKEN)
         except Exception as e:

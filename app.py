@@ -1,9 +1,44 @@
+import os
 import streamlit as st
 from snowflake.connector import DatabaseError
 from snowflake.connector.connection import SnowflakeConnection
 
 # set_page_config must be run as the first Streamlit command on the page, before any other streamlit imports.
-st.set_page_config(layout="wide", page_icon="💬", page_title="Semantic Model Generator")
+st.set_page_config(layout="wide", page_icon="💬", page_title="语义模型生成器")
+
+
+def _detect_china_region() -> bool:
+    """
+    Detect if running in Snowflake China region.
+    Returns True if China region is detected.
+    """
+    # Check if explicitly set
+    if os.environ.get("USE_QWEN_FOR_CHINA", "").lower() == "true":
+        return True
+    
+    # Check host name for China region indicators
+    host = os.environ.get("SNOWFLAKE_HOST", "")
+    if any(x in host.lower() for x in [".cn", "cn-", "china"]):
+        return True
+    
+    # Check account locator for China region
+    account = os.environ.get("SNOWFLAKE_ACCOUNT_LOCATOR", "")
+    if any(x in account.lower() for x in ["cn-", ".cn"]):
+        return True
+    
+    return False
+
+
+# Auto-detect China region and set environment variable
+if _detect_china_region():
+    os.environ["USE_QWEN_FOR_CHINA"] = "true"
+    # Also set default Qwen models
+    if not os.environ.get("QWEN_MODEL"):
+        os.environ["QWEN_MODEL"] = "qwen-turbo"
+    if not os.environ.get("QWEN_SQL_MODEL"):
+        os.environ["QWEN_SQL_MODEL"] = "qwen-max"
+    if not os.environ.get("QWEN_JUDGE_MODEL"):
+        os.environ["QWEN_JUDGE_MODEL"] = "qwen-max"
 
 from app_utils.shared_utils import (  # noqa: E402
     GeneratorAppScreen,
@@ -62,10 +97,9 @@ if __name__ == "__main__":
         st.markdown(
             """
                 <div style="text-align: center;">
-                    <h1>Welcome to the Snowflake Semantic Model Generator! ❄️</h1>
-                    <p>⚠️  Heads up! The Streamlit app is no longer supported for semantic model creation.
-                    <p>👉 Please use the Snowsight UI in Snowflake to create and update semantic models — it’s newer and works better! </p>
-                    <p>✅ Once your model is created in Snowsight, come back here to run evaluations, which still work best in this app.</p>
+                    <h1>欢迎使用 Snowflake 语义模型生成器! ❄️</h1>
+                    <p>🚀 使用此工具创建、编辑和测试您的语义模型</p>
+                    <p>💡 语义模型帮助 AI 理解您的数据结构，实现自然语言查询</p>
                 </div>
             """,
             unsafe_allow_html=True,
@@ -76,30 +110,18 @@ if __name__ == "__main__":
         _, center, _ = st.columns([1, 2, 1])
         with center:
             if st.button(
-                "**[⚠️ Deprecated]🛠 Create a new semantic model**",
+                "**🛠 创建新的语义模型**",
                 use_container_width=True,
                 type="primary",
             ):
                 builder.show()
             st.markdown("")
             if st.button(
-                "**✏️ Edit an existing semantic model**",
+                "**✏️ 编辑现有语义模型**",
                 use_container_width=True,
                 type="primary",
             ):
                 iteration.show()
-            st.markdown("")
-            if st.button(
-                "**[⚠️ Deprecated]📦 Start with partner semantic model**",
-                use_container_width=True,
-                type="primary",
-            ):
-                set_sit_query_tag(
-                    get_snowflake_connection(),
-                    vendor="",
-                    action="start",
-                )
-                partner.show()
 
     conn = verify_environment_setup()
     set_snowpark_session(conn)

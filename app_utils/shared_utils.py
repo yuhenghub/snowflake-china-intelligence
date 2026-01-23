@@ -42,6 +42,10 @@ from semantic_model_generator.snowflake_utils.snowflake_connector import (
 
 SNOWFLAKE_ACCOUNT = os.environ.get("SNOWFLAKE_ACCOUNT_LOCATOR", "")
 
+# China region flag - set to True to use Qwen API instead of Cortex LLM
+USE_QWEN_FOR_CHINA = os.environ.get("USE_QWEN_FOR_CHINA", "false").lower() == "true"
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-turbo")
+
 # Add a logo on the top-left corner of the app
 LOGO_URL_LARGE = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Snowflake_Logo.svg/2560px-Snowflake_Logo.svg.png"
 LOGO_URL_SMALL = (
@@ -404,6 +408,75 @@ def set_account_name(
     st.session_state["account_name"] = SNOWFLAKE_ACCOUNT
 
 
+def _detect_and_set_china_region(conn: SnowflakeConnection) -> None:
+    """
+    Detect if running in Snowflake China region and set environment variables and session state.
+    """
+    global USE_QWEN_FOR_CHINA
+    
+    # Already detected
+    if "is_china_region" in st.session_state:
+        USE_QWEN_FOR_CHINA = st.session_state["is_china_region"]
+        return
+    
+    # Check environment variable
+    if os.environ.get("USE_QWEN_FOR_CHINA", "").lower() == "true":
+        USE_QWEN_FOR_CHINA = True
+        st.session_state["is_china_region"] = True
+        return
+    
+    # Try to detect from connection
+    is_china = False
+    
+    try:
+        # Check host
+        host = conn.host or ""
+        if any(x in host.lower() for x in [".cn", "cn-", "china", "amazonaws.com.cn"]):
+            is_china = True
+        
+        # Check account
+        if not is_china:
+            cursor = conn.cursor()
+            cursor.execute("SELECT CURRENT_ACCOUNT()")
+            account = cursor.fetchone()[0] or ""
+            if any(x in account.lower() for x in ["cn-", ".cn"]):
+                is_china = True
+        
+        # Check region
+        if not is_china:
+            cursor = conn.cursor()
+            cursor.execute("SELECT CURRENT_REGION()")
+            region = cursor.fetchone()[0] or ""
+            if "cn-" in region.lower() or "china" in region.lower():
+                is_china = True
+        
+        # Final check: try to use Cortex, if it fails, assume China region
+        if not is_china:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', 'test')")
+            except Exception:
+                # Cortex not available, assume China region
+                is_china = True
+    except Exception:
+        # If any detection fails, assume China region to be safe
+        is_china = True
+    
+    # Set the result
+    st.session_state["is_china_region"] = is_china
+    USE_QWEN_FOR_CHINA = is_china
+    
+    if is_china:
+        os.environ["USE_QWEN_FOR_CHINA"] = "true"
+        # Set default Qwen models
+        if not os.environ.get("QWEN_MODEL"):
+            os.environ["QWEN_MODEL"] = "qwen-turbo"
+        if not os.environ.get("QWEN_SQL_MODEL"):
+            os.environ["QWEN_SQL_MODEL"] = "qwen-max"
+        if not os.environ.get("QWEN_JUDGE_MODEL"):
+            os.environ["QWEN_JUDGE_MODEL"] = "qwen-max"
+
+
 def set_host_name(
     conn: SnowflakeConnection, SNOWFLAKE_HOST: Optional[str] = None
 ) -> None:
@@ -411,7 +484,11 @@ def set_host_name(
     Sets host_name in st.session_state.
     Used to consolidate from various connection methods.
     Value only necessary for open-source implementation.
+    Also detects China region and sets appropriate environment variables.
     """
+    # Detect China region and set environment variables
+    _detect_and_set_china_region(conn)
+    
     if st.session_state["sis"]:
         st.session_state["host_name"] = ""
     else:
@@ -1283,7 +1360,22 @@ def run_cortex_complete(
 
     if prompt_args:
         prompt = prompt.format(**prompt_args).replace("'", "\\'")
-    complete_sql = f"SELECT snowflake.cortex.complete('{model}', '{prompt}')"
+    
+    # Check if China region (use session state or detect)
+    is_china = st.session_state.get("is_china_region", USE_QWEN_FOR_CHINA)
+    
+    # Use Qwen for China region, otherwise use Cortex
+    if is_china:
+        # Map Cortex model names to Qwen model names
+        qwen_model = QWEN_MODEL
+        if model in ["mistral-large2", "mistral-large"]:
+            qwen_model = "qwen-max"
+        elif model in ["llama3-8b", "llama3-70b"]:
+            qwen_model = "qwen-turbo"
+        complete_sql = f"SELECT CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{qwen_model}', '{prompt}')"
+    else:
+        complete_sql = f"SELECT snowflake.cortex.complete('{model}', '{prompt}')"
+    
     response = conn.cursor().execute(complete_sql)
 
     if response:
