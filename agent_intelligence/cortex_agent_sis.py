@@ -146,26 +146,60 @@ CUSTOM_CSS = """
 """
 
 # ===============================
-# DashScope 模型配置
+# 模型提供商和模型配置
 # ===============================
-DASHSCOPE_MODELS = {
-    "qwen-max": "Qwen-Max (推荐，能力最强)",
-    "qwen-plus": "Qwen-Plus (平衡性能与成本)",
-    "qwen-turbo": "Qwen-Turbo (快速响应)",
-    "qwen-max-longcontext": "Qwen-Max-LongContext (长文本)",
-    "qwen2.5-72b-instruct": "Qwen2.5-72B-Instruct",
-    "qwen2.5-32b-instruct": "Qwen2.5-32B-Instruct",
+MODEL_PROVIDERS = {
+    "DashScope (通义千问)": {
+        "models": {
+            "qwen-max": "Qwen-Max (推荐，能力最强)",
+            "qwen-plus": "Qwen-Plus (平衡性能与成本)",
+            "qwen-turbo": "Qwen-Turbo (快速响应)",
+            "qwen-max-longcontext": "Qwen-Max-LongContext (长文本)",
+            "qwen2.5-72b-instruct": "Qwen2.5-72B-Instruct",
+            "qwen2.5-32b-instruct": "Qwen2.5-32B-Instruct",
+        },
+        "default": "qwen-max"
+    },
+    "DeepSeek": {
+        "models": {
+            "deepseek-chat": "DeepSeek-V3 (推荐)",
+            "deepseek-reasoner": "DeepSeek-R1 (深度推理)",
+        },
+        "default": "deepseek-chat"
+    },
+    "Kimi (月之暗面)": {
+        "models": {
+            "moonshot-v1-8k": "Moonshot-v1-8K",
+            "moonshot-v1-32k": "Moonshot-v1-32K",
+            "moonshot-v1-128k": "Moonshot-v1-128K (长文本)",
+        },
+        "default": "moonshot-v1-8k"
+    },
+    "MiniMax": {
+        "models": {
+            "abab6.5s-chat": "ABAB6.5s (快速)",
+            "abab6.5-chat": "ABAB6.5 (标准)",
+            "abab5.5-chat": "ABAB5.5",
+        },
+        "default": "abab6.5s-chat"
+    },
 }
 
+DEFAULT_PROVIDER = "DashScope (通义千问)"
 DEFAULT_MODEL = "qwen-max"
 
 
 # ===============================
-# 时间问候语生成
+# 时间问候语生成 (中国时区 UTC+8)
 # ===============================
 def get_time_greeting(username: str = "Yuheng") -> tuple[str, str]:
-    """根据当前时间生成问候语"""
-    current_hour = datetime.now().hour
+    """根据中国时区时间生成问候语"""
+    from datetime import timezone, timedelta
+    
+    # 中国时区 UTC+8
+    china_tz = timezone(timedelta(hours=8))
+    china_time = datetime.now(china_tz)
+    current_hour = china_time.hour
     
     if 5 <= current_hour < 12:
         greeting = f"Good morning, {username}"
@@ -718,6 +752,9 @@ def main():
     if "semantic_model_name" not in st.session_state:
         st.session_state.semantic_model_name = None
     
+    if "selected_provider" not in st.session_state:
+        st.session_state.selected_provider = DEFAULT_PROVIDER
+    
     if "selected_model" not in st.session_state:
         st.session_state.selected_model = DEFAULT_MODEL
     
@@ -732,19 +769,41 @@ def main():
     with st.sidebar:
         st.markdown("### 🧠 模型选择")
         
-        # DashScope 模型选择
+        # 模型提供商选择
+        provider_list = list(MODEL_PROVIDERS.keys())
+        selected_provider = st.selectbox(
+            "选择模型提供商",
+            options=provider_list,
+            index=provider_list.index(st.session_state.selected_provider) if st.session_state.selected_provider in provider_list else 0,
+            key="provider_selector"
+        )
+        
+        # 如果提供商变化，更新默认模型
+        if selected_provider != st.session_state.selected_provider:
+            st.session_state.selected_provider = selected_provider
+            st.session_state.selected_model = MODEL_PROVIDERS[selected_provider]["default"]
+        
+        # 子模型选择
+        provider_models = MODEL_PROVIDERS[selected_provider]["models"]
+        model_list = list(provider_models.keys())
+        
+        # 确保当前选中的模型在列表中
+        current_model_index = 0
+        if st.session_state.selected_model in model_list:
+            current_model_index = model_list.index(st.session_state.selected_model)
+        
         selected_model = st.selectbox(
-            "选择 DashScope 模型",
-            options=list(DASHSCOPE_MODELS.keys()),
-            index=list(DASHSCOPE_MODELS.keys()).index(st.session_state.selected_model),
-            format_func=lambda x: DASHSCOPE_MODELS[x],
+            "选择模型",
+            options=model_list,
+            index=current_model_index,
+            format_func=lambda x: provider_models[x],
             key="model_selector"
         )
         
         if selected_model != st.session_state.selected_model:
             st.session_state.selected_model = selected_model
         
-        st.caption(f"当前模型: **{selected_model}**")
+        st.caption(f"📍 **{selected_provider}** / `{selected_model}`")
         
         st.markdown("---")
         st.markdown("### 🗄️ 数据源配置")
@@ -798,7 +857,7 @@ def main():
             if st.button("🗑️ 卸载语义模型"):
                 st.session_state.semantic_model = None
                 st.session_state.semantic_model_name = None
-                st.rerun()
+                st.experimental_rerun()
         else:
             st.info("💡 加载语义模型可提升 SQL 生成准确性")
         
@@ -831,7 +890,7 @@ def main():
                                         st.session_state.semantic_model = yaml_content
                                         st.session_state.semantic_model_name = selected_yaml.split("/")[-1]
                                         st.success("✅ 语义模型加载成功！")
-                                        st.rerun()
+                                        st.experimental_rerun()
                         else:
                             st.caption("该 Stage 中没有 YAML 文件")
             except Exception as e:
@@ -849,7 +908,7 @@ def main():
                     st.session_state.semantic_model = manual_yaml
                     st.session_state.semantic_model_name = "手动输入"
                     st.success("✅ 语义模型已应用！")
-                    st.rerun()
+                    st.experimental_rerun()
         
         # 显示可用表
         st.markdown("---")
@@ -867,7 +926,7 @@ def main():
         if st.button("🗑️ 清除对话", use_container_width=True):
             st.session_state.agent_messages = []
             st.session_state.last_query_result = None
-            st.rerun()
+            st.experimental_rerun()
     
     # 主要内容区 - 标签页
     tab1, tab2, tab3 = st.tabs(["🤖 智能对话 (Agent)", "📈 数据洞察 (Intelligence)", "🔧 工具箱"])
@@ -986,7 +1045,7 @@ def main():
                 agent_message["content"] = str(response)
             
             st.session_state.agent_messages.append(agent_message)
-            st.rerun()
+            st.experimental_rerun()
     
     # ===== Tab 2: Intelligence =====
     with tab2:
