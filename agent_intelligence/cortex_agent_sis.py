@@ -710,7 +710,6 @@ def render_data_preview(df: pd.DataFrame, title: str = "数据预览"):
     st.dataframe(
         df,
         use_container_width=True,
-        hide_index=True,
         height=min(400, 35 * len(df) + 38)
     )
 
@@ -1191,7 +1190,7 @@ def main():
                         st.markdown(f"**行数:** {result['row_count']:,}")
                         
                         cols_df = pd.DataFrame(result["columns"])
-                        st.dataframe(cols_df, use_container_width=True, hide_index=True)
+                        st.dataframe(cols_df, use_container_width=True)
                     else:
                         st.error(result["error"])
             else:
@@ -1215,7 +1214,7 @@ def main():
                     "非空数量": df.count().values,
                     "空值数量": df.isnull().sum().values
                 })
-                st.dataframe(dtype_df, use_container_width=True, hide_index=True)
+                st.dataframe(dtype_df, use_container_width=True)
             else:
                 st.info("请先执行查询以获取数据")
         
