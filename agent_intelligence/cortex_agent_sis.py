@@ -33,69 +33,87 @@ def get_snowpark_session():
     return get_active_session()
 
 # ===============================
-# 样式定义
+# 样式定义 (支持 Light 和 Dark 模式)
 # ===============================
 CUSTOM_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
 
+/* ===== 通用变量 ===== */
 :root {
     --primary-gradient: linear-gradient(135deg, #00D4FF 0%, #7B2CBF 50%, #FF6B6B 100%);
-    --card-bg: rgba(17, 25, 40, 0.75);
-    --border-color: rgba(255, 255, 255, 0.125);
-    --text-primary: #E8E8E8;
-    --text-secondary: #A0A0A0;
     --accent-cyan: #00D4FF;
     --accent-purple: #7B2CBF;
     --accent-pink: #FF6B6B;
 }
 
-.main {
-    background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 50%, #16213e 100%);
+/* ===== Dark Mode (默认) ===== */
+[data-testid="stAppViewContainer"],
+.stApp {
     font-family: 'Noto Sans SC', 'JetBrains Mono', sans-serif;
 }
 
-.stApp {
-    background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 50%, #16213e 100%);
+/* 大标题样式 */
+.big-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 0.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
 }
 
-.main-title {
+.big-title .snowflake-icon {
+    font-size: 2rem;
+}
+
+.big-title .title-text {
     background: var(--primary-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    font-size: 2.5rem;
-    font-weight: 700;
-    text-align: center;
-    margin-bottom: 0.5rem;
 }
 
-.subtitle {
-    color: var(--text-secondary);
+/* 问候语样式 */
+.greeting-text {
+    font-size: 1.8rem;
+    font-weight: 400;
     text-align: center;
-    font-size: 1rem;
-    margin-bottom: 2rem;
+    margin-bottom: 0.3rem;
 }
 
+/* 副标题样式 */
+.subtitle-text {
+    font-size: 1.3rem;
+    font-weight: 500;
+    text-align: center;
+    margin-bottom: 1.5rem;
+    background: linear-gradient(135deg, #00D4FF 0%, #7B2CBF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Feature Card */
 .feature-card {
-    background: var(--card-bg);
     backdrop-filter: blur(16px);
-    border: 1px solid var(--border-color);
     border-radius: 16px;
     padding: 1.5rem;
     margin: 1rem 0;
 }
 
+/* Agent Message */
 .agent-message {
-    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(123, 44, 191, 0.1) 100%);
     border-left: 3px solid var(--accent-cyan);
     border-radius: 0 12px 12px 0;
     padding: 1rem 1.25rem;
     margin: 0.75rem 0;
 }
 
+/* User Message */
 .user-message {
-    background: rgba(255, 107, 107, 0.1);
     border-right: 3px solid var(--accent-pink);
     border-radius: 12px 0 0 12px;
     padding: 1rem 1.25rem;
@@ -103,9 +121,8 @@ CUSTOM_CSS = """
     text-align: right;
 }
 
+/* Tool Card */
 .tool-card {
-    background: rgba(123, 44, 191, 0.15);
-    border: 1px solid rgba(123, 44, 191, 0.3);
     border-radius: 8px;
     padding: 0.75rem 1rem;
     margin: 0.5rem 0;
@@ -113,6 +130,7 @@ CUSTOM_CSS = """
     font-size: 0.85rem;
 }
 
+/* Semantic Badge */
 .semantic-badge {
     background: linear-gradient(135deg, #00D4FF 0%, #7B2CBF 100%);
     color: white;
@@ -122,9 +140,8 @@ CUSTOM_CSS = """
     font-weight: 500;
 }
 
+/* Metric Card */
 .metric-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 1.25rem;
     text-align: center;
@@ -138,9 +155,72 @@ CUSTOM_CSS = """
     -webkit-text-fill-color: transparent;
 }
 
-.metric-label {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
+/* ===== Dark Mode 特定样式 ===== */
+@media (prefers-color-scheme: dark) {
+    .greeting-text {
+        color: #E8E8E8;
+    }
+    .feature-card {
+        background: rgba(17, 25, 40, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.125);
+    }
+    .agent-message {
+        background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(123, 44, 191, 0.1) 100%);
+    }
+    .user-message {
+        background: rgba(255, 107, 107, 0.1);
+    }
+    .tool-card {
+        background: rgba(123, 44, 191, 0.15);
+        border: 1px solid rgba(123, 44, 191, 0.3);
+    }
+    .metric-card {
+        background: rgba(17, 25, 40, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.125);
+    }
+    .metric-label {
+        color: #A0A0A0;
+    }
+}
+
+/* ===== Light Mode 特定样式 ===== */
+@media (prefers-color-scheme: light) {
+    .greeting-text {
+        color: #1a1a2e;
+    }
+    .feature-card {
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    .agent-message {
+        background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, rgba(123, 44, 191, 0.08) 100%);
+    }
+    .user-message {
+        background: rgba(255, 107, 107, 0.08);
+    }
+    .tool-card {
+        background: rgba(123, 44, 191, 0.08);
+        border: 1px solid rgba(123, 44, 191, 0.2);
+    }
+    .metric-card {
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+    .metric-label {
+        color: #666666;
+    }
+}
+
+/* Streamlit 主题适配 */
+[data-theme="light"] .greeting-text,
+[data-baseweb="light"] .greeting-text {
+    color: #1a1a2e;
+}
+
+[data-theme="dark"] .greeting-text,
+[data-baseweb="dark"] .greeting-text {
+    color: #E8E8E8;
 }
 </style>
 """
@@ -721,13 +801,18 @@ def main():
     # 注入自定义样式
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     
-    # 获取时间问候语
+    # 获取时间问候语 (使用中国时区 UTC+8)
     greeting_en, greeting_cn = get_time_greeting("Yuheng")
     
-    # 标题和问候语
-    st.markdown(f'<h1 class="main-title">❄️ Intelligence</h1>', unsafe_allow_html=True)
-    st.markdown(f'<h2 style="text-align: center; color: #E8E8E8; font-weight: 400; margin-bottom: 0.5rem;">{greeting_en}</h2>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle" style="background: linear-gradient(135deg, #00D4FF 0%, #7B2CBF 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 1.5rem; font-weight: 500;">What insights can I help with?</p>', unsafe_allow_html=True)
+    # 大标题 + 问候语 + 副标题
+    st.markdown('''
+    <div class="big-title">
+        <span class="snowflake-icon">❄️</span>
+        <span class="title-text">Snowflake China Intelligence</span>
+    </div>
+    ''', unsafe_allow_html=True)
+    st.markdown(f'<div class="greeting-text">{greeting_en}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle-text">What insights can I help with?</div>', unsafe_allow_html=True)
     
     # 初始化 session state
     if "agent_messages" not in st.session_state:
