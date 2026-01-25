@@ -1,4 +1,4 @@
-name: intelligence_env
+name: cortex_agent_env
 channels:
 - snowflake
 dependencies:
