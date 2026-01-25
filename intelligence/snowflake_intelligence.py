@@ -467,8 +467,9 @@ def main():
             else:
                 st.info("💡 请在 Cortex Agent 中配置数据源和语义模型")
                 
-                # 手动配置选项
-                with st.expander("手动配置"):
+                # 手动配置选项 - 使用 checkbox 代替嵌套 expander
+                show_manual_config = st.checkbox("⚙️ 手动配置", key="show_manual_config")
+                if show_manual_config:
                     udf_path = st.text_input(
                         "Qwen UDF 路径",
                         value=st.session_state.qwen_udf_path,
