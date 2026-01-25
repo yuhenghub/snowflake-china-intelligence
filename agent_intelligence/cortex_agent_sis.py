@@ -903,8 +903,27 @@ def main():
                 if msg.get("data") is not None:
                     render_data_preview(msg["data"], "查询结果")
         
-        # 输入框
-        user_input = st.chat_input("输入你的问题...")
+        # 输入框 (使用 text_input 替代 chat_input 以兼容 SiS)
+        def submit_question():
+            if st.session_state.user_question_input:
+                st.session_state.submitted_question = st.session_state.user_question_input
+                st.session_state.user_question_input = ""
+        
+        col_input, col_btn = st.columns([5, 1])
+        with col_input:
+            st.text_input(
+                "输入你的问题",
+                key="user_question_input",
+                placeholder="Ask Snowflake Intelligence...",
+                label_visibility="collapsed",
+                on_change=submit_question
+            )
+        with col_btn:
+            if st.button("发送", type="primary", use_container_width=True):
+                submit_question()
+        
+        # 处理提交的问题
+        user_input = st.session_state.pop("submitted_question", None)
         
         if user_input:
             # 添加用户消息
