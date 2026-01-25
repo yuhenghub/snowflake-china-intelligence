@@ -22,6 +22,26 @@ _autogen_model = "llama3-8b"
 # Default Qwen model for description generation
 QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-turbo")
 
+# Default UDF path
+DEFAULT_QWEN_UDF_PATH = "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
+
+
+def _get_qwen_udf_path() -> str:
+    """获取 Qwen UDF 的完整路径"""
+    # First check environment variable
+    env_path = os.environ.get("QWEN_UDF_PATH")
+    if env_path:
+        return env_path
+    
+    # Try to get from streamlit session_state if available
+    try:
+        import streamlit as st
+        return st.session_state.get("qwen_udf_path", DEFAULT_QWEN_UDF_PATH)
+    except Exception:
+        pass
+    
+    return DEFAULT_QWEN_UDF_PATH
+
 
 def _is_china_region_connector(conn: SnowflakeConnection) -> bool:
     """Check if running in China region by examining connection."""
@@ -130,7 +150,8 @@ def _get_table_comment(
             
             # Use Qwen for China region, otherwise use Cortex
             if _is_china_region_connector(conn):
-                complete_sql = f"select CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{QWEN_MODEL}', '{comment_prompt}')"
+                udf_path = _get_qwen_udf_path()
+                complete_sql = f"select {udf_path}('{QWEN_MODEL}', '{comment_prompt}')"
             else:
                 complete_sql = f"select SNOWFLAKE.CORTEX.COMPLETE('{_autogen_model}', '{comment_prompt}')"
             
@@ -158,7 +179,8 @@ Please provide a business description for the column. Only return the descriptio
             
             # Use Qwen for China region, otherwise use Cortex
             if _is_china_region_connector(conn):
-                complete_sql = f"select CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{QWEN_MODEL}', '{comment_prompt}')"
+                udf_path = _get_qwen_udf_path()
+                complete_sql = f"select {udf_path}('{QWEN_MODEL}', '{comment_prompt}')"
             else:
                 complete_sql = f"select SNOWFLAKE.CORTEX.COMPLETE('{_autogen_model}', '{comment_prompt}')"
             

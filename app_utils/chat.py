@@ -78,11 +78,18 @@ SQL: {sql}
 请用一句话解释："""
 
 
+def _get_qwen_udf_path() -> str:
+    """获取 Qwen UDF 的完整路径"""
+    default_path = "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
+    return st.session_state.get("qwen_udf_path", default_path)
+
+
 def _call_qwen_udf(conn: SnowflakeConnection, model: str, prompt: str) -> str:
     """Call Qwen UDF in Snowflake to generate response."""
     # Escape single quotes in prompt
     escaped_prompt = prompt.replace("'", "''").replace("\\", "\\\\")
-    query = f"SELECT CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{model}', $${escaped_prompt}$$)"
+    udf_path = _get_qwen_udf_path()
+    query = f"SELECT {udf_path}('{model}', $${escaped_prompt}$$)"
     
     try:
         cursor = conn.cursor()

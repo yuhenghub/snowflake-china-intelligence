@@ -7,6 +7,65 @@ from snowflake.connector.connection import SnowflakeConnection
 st.set_page_config(layout="wide", page_icon="💬", page_title="语义模型生成器")
 
 
+# ============================================
+# 默认配置
+# ============================================
+DEFAULT_QWEN_UDF_PATH = "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
+DEFAULT_SEMANTIC_STAGE_PATH = "@SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.SEMANTIC_MODELS"
+
+
+def get_qwen_udf_path() -> str:
+    """获取 Qwen UDF 的完整路径"""
+    return st.session_state.get("qwen_udf_path", DEFAULT_QWEN_UDF_PATH)
+
+
+def get_semantic_stage_path() -> str:
+    """获取语义模型存储的 Stage 路径"""
+    return st.session_state.get("semantic_stage_path", DEFAULT_SEMANTIC_STAGE_PATH)
+
+
+def render_config_sidebar():
+    """渲染配置侧边栏"""
+    with st.sidebar:
+        st.markdown("---")
+        with st.expander("⚙️ 高级配置", expanded=False):
+            st.markdown("##### Qwen UDF 配置")
+            
+            # Initialize session state
+            if "qwen_udf_path" not in st.session_state:
+                st.session_state.qwen_udf_path = DEFAULT_QWEN_UDF_PATH
+            if "semantic_stage_path" not in st.session_state:
+                st.session_state.semantic_stage_path = DEFAULT_SEMANTIC_STAGE_PATH
+            
+            # UDF Path input
+            udf_path = st.text_input(
+                "Qwen UDF 路径",
+                value=st.session_state.qwen_udf_path,
+                help="格式: DATABASE.SCHEMA.FUNCTION_NAME",
+                key="udf_path_input"
+            )
+            if udf_path != st.session_state.qwen_udf_path:
+                st.session_state.qwen_udf_path = udf_path
+            
+            st.markdown("##### 语义模型存储")
+            
+            # Stage Path input
+            stage_path = st.text_input(
+                "Stage 路径",
+                value=st.session_state.semantic_stage_path,
+                help="格式: @DATABASE.SCHEMA.STAGE_NAME",
+                key="stage_path_input"
+            )
+            if stage_path != st.session_state.semantic_stage_path:
+                st.session_state.semantic_stage_path = stage_path
+            
+            # Show current config
+            st.markdown("---")
+            st.caption("当前配置:")
+            st.code(f"UDF: {st.session_state.qwen_udf_path}", language=None)
+            st.code(f"Stage: {st.session_state.semantic_stage_path}", language=None)
+
+
 def _detect_china_region() -> bool:
     """
     Detect if running in Snowflake China region.
@@ -130,6 +189,9 @@ if __name__ == "__main__":
     set_account_name(conn, SNOWFLAKE_ACCOUNT_LOCATOR)
     set_host_name(conn, SNOWFLAKE_HOST)
     set_user_name(conn, SNOWFLAKE_USER)
+
+    # Render configuration sidebar
+    render_config_sidebar()
 
     # When the app first loads, show the onboarding screen.
     if "page" not in st.session_state:

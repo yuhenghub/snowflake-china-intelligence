@@ -46,6 +46,14 @@ SNOWFLAKE_ACCOUNT = os.environ.get("SNOWFLAKE_ACCOUNT_LOCATOR", "")
 USE_QWEN_FOR_CHINA = os.environ.get("USE_QWEN_FOR_CHINA", "false").lower() == "true"
 QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-turbo")
 
+# Default configurable paths
+DEFAULT_QWEN_UDF_PATH = "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
+
+
+def get_qwen_udf_path() -> str:
+    """获取 Qwen UDF 的完整路径"""
+    return st.session_state.get("qwen_udf_path", DEFAULT_QWEN_UDF_PATH)
+
 # Add a logo on the top-left corner of the app
 LOGO_URL_LARGE = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Snowflake_Logo.svg/2560px-Snowflake_Logo.svg.png"
 LOGO_URL_SMALL = (
@@ -1372,7 +1380,8 @@ def run_cortex_complete(
             qwen_model = "qwen-max"
         elif model in ["llama3-8b", "llama3-70b"]:
             qwen_model = "qwen-turbo"
-        complete_sql = f"SELECT CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{qwen_model}', '{prompt}')"
+        udf_path = get_qwen_udf_path()
+        complete_sql = f"SELECT {udf_path}('{qwen_model}', '{prompt}')"
     else:
         complete_sql = f"SELECT snowflake.cortex.complete('{model}', '{prompt}')"
     

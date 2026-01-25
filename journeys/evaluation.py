@@ -32,6 +32,7 @@ def _is_china_region_eval() -> bool:
 
 from app_utils.chat import send_message
 from app_utils.shared_utils import (
+    get_qwen_udf_path,
     get_snowflake_connection,
     schema_selector_container,
     set_sit_query_tag,
@@ -179,8 +180,9 @@ def _llm_judge(frame: pd.DataFrame, max_frame_size=200) -> pd.DataFrame:
 
     # Use Qwen for China region, otherwise use Cortex
     if _is_china_region_eval():
+        udf_path = get_qwen_udf_path()
         query = f"""
-        SELECT CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE('{QWEN_JUDGE_MODEL}', {col_name}) AS LLM_JUDGE
+        SELECT {udf_path}('{QWEN_JUDGE_MODEL}', {col_name}) AS LLM_JUDGE
         FROM {conn.database}.{conn.schema}.{table_name}
         """
     else:
