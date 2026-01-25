@@ -284,10 +284,72 @@ def get_current_user(conn) -> str:
         return "用户"
 
 # ===============================
+# 配置存储表名
+# ===============================
+CONFIG_TABLE = "AGENT_CONFIG"
+
+
+# ===============================
 # 配置管理
 # ===============================
-def save_agent_config():
-    """保存 Agent 配置到 session state"""
+def ensure_config_table(conn):
+    """确保配置表存在"""
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {CONFIG_TABLE} (
+                config_key VARCHAR(100) PRIMARY KEY,
+                config_value VARIANT,
+                updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+            )
+        """)
+        return True
+    except Exception as e:
+        st.warning(f"创建配置表失败: {e}")
+        return False
+
+
+def save_config_to_table(conn, config: Dict):
+    """保存配置到 Snowflake 表"""
+    if not conn:
+        return False
+    try:
+        ensure_config_table(conn)
+        cursor = conn.cursor()
+        # 转义 JSON 中的单引号
+        config_json = json.dumps(config).replace("'", "''")
+        cursor.execute(f"""
+            MERGE INTO {CONFIG_TABLE} t
+            USING (SELECT 'agent_config' AS config_key, PARSE_JSON($${config_json}$$) AS config_value) s
+            ON t.config_key = s.config_key
+            WHEN MATCHED THEN UPDATE SET config_value = s.config_value, updated_at = CURRENT_TIMESTAMP()
+            WHEN NOT MATCHED THEN INSERT (config_key, config_value) VALUES (s.config_key, s.config_value)
+        """)
+        return True
+    except Exception as e:
+        st.warning(f"保存配置到数据库失败: {e}")
+        return False
+
+
+def load_config_from_table(conn) -> Dict:
+    """从 Snowflake 表加载配置"""
+    if not conn:
+        return {}
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT config_value FROM {CONFIG_TABLE} WHERE config_key = 'agent_config'")
+        row = cursor.fetchone()
+        if row and row[0]:
+            return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        return {}
+    except Exception:
+        return {}
+
+
+def save_agent_config(conn=None):
+    """保存 Agent 配置到 session state 和 Snowflake 表"""
     config = {
         "database": st.session_state.get("agent_database"),
         "schema": st.session_state.get("agent_schema"),
@@ -296,13 +358,30 @@ def save_agent_config():
         "semantic_model_content": st.session_state.get("agent_semantic_model_content"),
         "llm_model": st.session_state.get("agent_llm_model", "qwen-max"),
         "tables": st.session_state.get("agent_tables", []),
+        "temperature": st.session_state.get("agent_temperature", 0.7),
+        "max_tokens": st.session_state.get("agent_max_tokens", 2048),
     }
     st.session_state["agent_config"] = config
+    
+    # 同时保存到 Snowflake 表
+    if conn:
+        save_config_to_table(conn, config)
+    
     return config
 
-def load_agent_config() -> Dict:
+
+def load_agent_config(conn=None) -> Dict:
     """加载 Agent 配置"""
-    return st.session_state.get("agent_config", {})
+    # 首先从 session state 加载
+    config = st.session_state.get("agent_config", {})
+    
+    # 如果 session state 为空，从 Snowflake 表加载
+    if not config and conn:
+        config = load_config_from_table(conn)
+        if config:
+            st.session_state["agent_config"] = config
+    
+    return config
 
 # ===============================
 # 主应用
@@ -325,21 +404,24 @@ def main():
     if not conn:
         st.warning("⚠️ 未检测到 Snowflake 连接，部分功能可能不可用")
     
-    # 初始化 session state
+    # 尝试从数据库加载已保存的配置
+    saved_config = load_agent_config(conn)
+    
+    # 初始化 session state（使用已保存的配置或默认值）
     if "agent_database" not in st.session_state:
-        st.session_state.agent_database = None
+        st.session_state.agent_database = saved_config.get("database")
     if "agent_schema" not in st.session_state:
-        st.session_state.agent_schema = None
+        st.session_state.agent_schema = saved_config.get("schema")
     if "agent_stage" not in st.session_state:
-        st.session_state.agent_stage = None
+        st.session_state.agent_stage = saved_config.get("stage")
     if "agent_semantic_model_file" not in st.session_state:
-        st.session_state.agent_semantic_model_file = None
+        st.session_state.agent_semantic_model_file = saved_config.get("semantic_model_file")
     if "agent_semantic_model_content" not in st.session_state:
-        st.session_state.agent_semantic_model_content = None
+        st.session_state.agent_semantic_model_content = saved_config.get("semantic_model_content")
     if "agent_llm_model" not in st.session_state:
-        st.session_state.agent_llm_model = "qwen-max"
+        st.session_state.agent_llm_model = saved_config.get("llm_model", "qwen-max")
     if "agent_tables" not in st.session_state:
-        st.session_state.agent_tables = []
+        st.session_state.agent_tables = saved_config.get("tables", [])
     
     # 布局：左侧配置摘要，右侧详细配置
     col_summary, col_config = st.columns([1, 2])
@@ -592,9 +674,13 @@ def main():
     col1, col2, col3 = st.columns([2, 1, 2])
     with col2:
         if st.button("💾 保存配置", type="primary", use_container_width=True):
-            config = save_agent_config()
-            st.success("✅ 配置已保存！")
-            st.json(config)
+            config = save_agent_config(conn)
+            st.success("✅ 配置已保存！可在 Intelligence 中使用。")
+            with st.expander("查看配置详情"):
+                # 不显示完整的语义模型内容
+                display_config = {k: v for k, v in config.items() if k != "semantic_model_content"}
+                display_config["semantic_model_loaded"] = bool(config.get("semantic_model_content"))
+                st.json(display_config)
     
     # 配置状态检查
     st.markdown("---")

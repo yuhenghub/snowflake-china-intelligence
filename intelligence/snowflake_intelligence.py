@@ -9,6 +9,8 @@ import streamlit as st
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import uuid
+import yaml
+import re
 
 # 设置页面配置
 st.set_page_config(
@@ -17,6 +19,11 @@ st.set_page_config(
     page_title="Snowflake China Intelligence",
     initial_sidebar_state="expanded"
 )
+
+# ===============================
+# 配置存储表名
+# ===============================
+CONFIG_TABLE = "AGENT_CONFIG"
 
 # ===============================
 # 样式定义 - 同时支持 Light 和 Dark 主题
@@ -272,10 +279,171 @@ def get_current_user(conn) -> str:
         cursor = conn.cursor()
         cursor.execute("SELECT CURRENT_USER()")
         user = cursor.fetchone()[0]
-        # 格式化用户名（首字母大写）
-        return user.title() if user else "用户"
+        # 格式化用户名（首字母大写，去除邮箱后缀等）
+        if user:
+            # 处理邮箱格式的用户名
+            if "@" in user:
+                user = user.split("@")[0]
+            # 处理下划线分隔的用户名
+            user = user.replace("_", " ").replace(".", " ")
+            return user.title()
+        return "用户"
     except Exception:
         return "用户"
+
+
+# ===============================
+# 配置存储和读取
+# ===============================
+def ensure_config_table(conn):
+    """确保配置表存在"""
+    if not conn:
+        return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {CONFIG_TABLE} (
+                config_key VARCHAR(100) PRIMARY KEY,
+                config_value VARIANT,
+                updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+            )
+        """)
+        return True
+    except Exception as e:
+        st.warning(f"创建配置表失败: {e}")
+        return False
+
+
+def save_config_to_table(conn, config: Dict):
+    """保存配置到 Snowflake 表"""
+    if not conn:
+        return False
+    try:
+        ensure_config_table(conn)
+        cursor = conn.cursor()
+        config_json = json.dumps(config)
+        cursor.execute(f"""
+            MERGE INTO {CONFIG_TABLE} t
+            USING (SELECT 'agent_config' AS config_key, PARSE_JSON('{config_json}') AS config_value) s
+            ON t.config_key = s.config_key
+            WHEN MATCHED THEN UPDATE SET config_value = s.config_value, updated_at = CURRENT_TIMESTAMP()
+            WHEN NOT MATCHED THEN INSERT (config_key, config_value) VALUES (s.config_key, s.config_value)
+        """)
+        return True
+    except Exception as e:
+        st.warning(f"保存配置失败: {e}")
+        return False
+
+
+def load_config_from_table(conn) -> Dict:
+    """从 Snowflake 表加载配置"""
+    if not conn:
+        return {}
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT config_value FROM {CONFIG_TABLE} WHERE config_key = 'agent_config'")
+        row = cursor.fetchone()
+        if row and row[0]:
+            return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        return {}
+    except Exception:
+        return {}
+
+
+# ===============================
+# 语义模型解析
+# ===============================
+def parse_semantic_model(yaml_content: str) -> Dict:
+    """解析语义模型，提取表、字段和描述信息"""
+    if not yaml_content:
+        return {}
+    
+    try:
+        model = yaml.safe_load(yaml_content)
+        return model if model else {}
+    except Exception:
+        return {}
+
+
+def generate_sample_questions(semantic_model: Dict) -> List[str]:
+    """根据语义模型生成示例问题"""
+    questions = []
+    
+    if not semantic_model:
+        return []
+    
+    try:
+        # 获取模型名称
+        model_name = semantic_model.get("name", "")
+        tables = semantic_model.get("tables", [])
+        
+        for table in tables:
+            table_name = table.get("name", "")
+            table_desc = table.get("description", "")
+            
+            # 获取维度
+            dimensions = table.get("dimensions", [])
+            # 获取度量
+            measures = table.get("measures", [])
+            # 获取时间维度
+            time_dims = table.get("time_dimensions", [])
+            
+            # 根据字段生成问题
+            if measures:
+                # 有度量 - 生成聚合分析问题
+                measure_names = [m.get("name", "") for m in measures[:2]]
+                dim_names = [d.get("name", "") for d in dimensions[:1]]
+                
+                if dim_names and measure_names:
+                    questions.append(f"按 {dim_names[0]} 统计 {measure_names[0]}")
+                
+                if time_dims:
+                    time_dim = time_dims[0].get("name", "时间")
+                    if measure_names:
+                        questions.append(f"显示 {measure_names[0]} 的时间趋势")
+            
+            if dimensions:
+                dim = dimensions[0]
+                dim_name = dim.get("name", "")
+                dim_desc = dim.get("description", dim_name)
+                if dim_name:
+                    questions.append(f"显示所有 {dim_desc or dim_name}")
+            
+            # 使用表描述生成问题
+            if table_desc:
+                questions.append(f"分析 {table_desc}")
+        
+        # 去重并限制数量
+        seen = set()
+        unique_questions = []
+        for q in questions:
+            if q and q not in seen:
+                seen.add(q)
+                unique_questions.append(q)
+        
+        return unique_questions[:5]  # 最多返回 5 个问题
+        
+    except Exception:
+        return []
+
+
+def get_agent_display_name(config: Dict) -> str:
+    """获取 Agent 显示名称"""
+    if not config:
+        return "Production Agent"
+    
+    # 优先使用语义模型文件名
+    if config.get("semantic_model_file"):
+        name = config["semantic_model_file"]
+        # 去除扩展名
+        name = re.sub(r'\.(yaml|yml)$', '', name, flags=re.IGNORECASE)
+        return name
+    
+    # 使用 schema 名
+    if config.get("schema"):
+        return config["schema"].split(".")[-1]
+    
+    return "Production Agent"
 
 # ===============================
 # Qwen API 调用
@@ -458,12 +626,29 @@ def main():
         # Agents 配置
         st.markdown("---")
         with st.expander("🤖 Agents", expanded=True):
-            # 从 Agent 配置中加载
+            # 首先尝试从 Snowflake 表加载配置
+            if "agent_config" not in st.session_state or not st.session_state.agent_config:
+                loaded_config = load_config_from_table(conn)
+                if loaded_config:
+                    st.session_state.agent_config = loaded_config
+            
             agent_config = st.session_state.get("agent_config", {})
             
             if agent_config and agent_config.get("semantic_model_content"):
-                st.success(f"✅ {agent_config.get('semantic_model_file', 'Agent 已配置')}")
+                agent_name = get_agent_display_name(agent_config)
+                st.success(f"✅ {agent_name}")
                 st.session_state.selected_agent = agent_config
+                
+                # 显示配置详情
+                st.caption(f"📊 数据库: {agent_config.get('database', '-')}")
+                st.caption(f"🤖 模型: {agent_config.get('llm_model', 'qwen-max')}")
+                
+                # 刷新配置按钮
+                if st.button("🔄 刷新配置", key="refresh_config", use_container_width=True):
+                    loaded_config = load_config_from_table(conn)
+                    if loaded_config:
+                        st.session_state.agent_config = loaded_config
+                        st.rerun()
             else:
                 st.info("💡 请在 Cortex Agent 中配置数据源和语义模型")
                 
@@ -542,24 +727,37 @@ def main():
             with tool_col2:
                 # Agent 选择
                 agent_config = st.session_state.get("agent_config", {})
-                agent_name = agent_config.get("semantic_model_file", "Production Agent") if agent_config else "Production Agent"
+                agent_name = get_agent_display_name(agent_config) if agent_config else "Production Agent"
                 st.button(f"🤖 {agent_name}", key="agent_select_btn")
             with tool_col3:
                 # 数据源
                 sources = "Auto"
+                if agent_config and agent_config.get("database"):
+                    sources = agent_config.get("database", "Auto")
                 st.button(f"📊 Sources: {sources}", key="sources_btn")
         
-        # 建议问题
+        # 建议问题 - 从语义模型生成
         st.markdown("---")
         
-        suggestions = [
-            "Show me production efficiency by assembly line",
-            "What machines need maintenance?",
-            "Show me quality issues by batch"
-        ]
+        # 尝试从语义模型生成示例问题
+        agent_config = st.session_state.get("agent_config", {})
+        semantic_content = agent_config.get("semantic_model_content", "") if agent_config else ""
         
-        for suggestion in suggestions:
-            if st.button(f"💬 {suggestion}", key=f"sug_{suggestion[:20]}", use_container_width=True):
+        suggestions = []
+        if semantic_content:
+            parsed_model = parse_semantic_model(semantic_content)
+            suggestions = generate_sample_questions(parsed_model)
+        
+        # 如果没有从语义模型生成问题，使用默认问题
+        if not suggestions:
+            suggestions = [
+                "显示所有数据的概览",
+                "分析最近的数据趋势",
+                "统计各分类的数量分布"
+            ]
+        
+        for idx, suggestion in enumerate(suggestions):
+            if st.button(f"💬 {suggestion}", key=f"sug_{idx}_{suggestion[:15]}", use_container_width=True):
                 # 添加用户消息
                 current_chat["messages"].append({
                     "role": "user",
