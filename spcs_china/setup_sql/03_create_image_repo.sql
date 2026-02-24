@@ -12,12 +12,10 @@ USE SCHEMA MODEL_SERVICE;
 CREATE IMAGE REPOSITORY IF NOT EXISTS MODEL_SERVICE_REPO
     COMMENT = 'Image repository for SPCS model service';
 
--- 查看仓库信息
-SHOW IMAGE REPOSITORIES;
-
--- 获取仓库 URL (用于 docker push)
+-- 查看仓库信息并获取 repository_url (用于 docker push)
+-- 从结果中的 repository_url 列复制完整 URL
 -- 格式: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
-SELECT SYSTEM$REGISTRY_URL('MODEL_SERVICE_REPO');
+SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
 
 -- ============================================
 -- 2. 创建 Stage 用于存储服务规范

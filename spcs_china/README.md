@@ -289,8 +289,9 @@ CREATE IMAGE REPOSITORY IF NOT EXISTS MODEL_SERVICE_REPO
     COMMENT = 'Image repository for SPCS model service';
 
 -- 获取仓库 URL
-SELECT SYSTEM$REGISTRY_URL('MODEL_SERVICE_REPO');
--- 输出类似: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
+SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
+-- 从结果中的 repository_url 列复制完整 URL，并赋值给本地环境变量 REGISTRY_URL
+-- 示例输出: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
 ```
 
 在本地执行 Docker 命令：
@@ -299,7 +300,8 @@ SELECT SYSTEM$REGISTRY_URL('MODEL_SERVICE_REPO');
 # 设置环境变量
 export SNOWFLAKE_ACCOUNT="your_account"
 export SNOWFLAKE_USER="your_user"
-export REGISTRY_URL="<org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo"
+# 使用上一条 SQL 的 repository_url 列作为 REGISTRY_URL
+export REGISTRY_URL="<从 SHOW IMAGE REPOSITORIES 结果中复制的 repository_url>"
 
 # 1. 登录到 Snowflake 镜像仓库
 docker login ${REGISTRY_URL%%/*} -u $SNOWFLAKE_USER

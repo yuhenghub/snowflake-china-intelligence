@@ -53,16 +53,20 @@ get_registry_url() {
     echo -e "\n${YELLOW}[2/6] 获取镜像仓库 URL...${NC}"
     
     if [ "$SNOWSQL_AVAILABLE" = true ]; then
+        # 使用 SHOW IMAGE REPOSITORIES 获取 repository_url
         REGISTRY_URL=$(snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
             -d "$SNOWFLAKE_DATABASE" -s "$SNOWFLAKE_SCHEMA" \
-            -q "SELECT SYSTEM\$REGISTRY_URL('$IMAGE_REPO')" -o output_format=plain -o header=false 2>/dev/null | tr -d '[:space:]')
+            -q "SHOW IMAGE REPOSITORIES LIKE '$IMAGE_REPO'" -o output_format=csv -o header=true 2>/dev/null | \
+            tail -n 1 | awk -F',' '{for(i=1;i<=NF;i++) if($i ~ /registry\.snowflakecomputing/) print $i}' | tr -d '"' | tr -d '[:space:]')
         
         if [ -z "$REGISTRY_URL" ]; then
             echo -e "${YELLOW}无法自动获取 Registry URL，请手动设置${NC}"
+            echo -e "提示: 执行 SHOW IMAGE REPOSITORIES LIKE '$IMAGE_REPO'; 并复制 repository_url 列的值"
             read -p "请输入 Registry URL: " REGISTRY_URL
         fi
     else
         echo -e "${YELLOW}请手动输入镜像仓库 URL${NC}"
+        echo -e "提示: 在 Snowflake 中执行 SHOW IMAGE REPOSITORIES LIKE '$IMAGE_REPO'; 并复制 repository_url 列的值"
         echo -e "格式: <org>-<account>.registry.snowflakecomputing.cn/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}/${IMAGE_REPO}"
         read -p "Registry URL: " REGISTRY_URL
     fi

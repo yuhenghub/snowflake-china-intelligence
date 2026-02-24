@@ -287,8 +287,9 @@ CREATE IMAGE REPOSITORY IF NOT EXISTS MODEL_SERVICE_REPO
     COMMENT = 'Image repository for SPCS model service';
 
 -- Get repository URL
-SELECT SYSTEM$REGISTRY_URL('MODEL_SERVICE_REPO');
--- Output like: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
+SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
+-- Copy the full URL from the repository_url column and assign it to the local environment variable REGISTRY_URL
+-- Example output: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
 ```
 
 Execute Docker commands locally:
@@ -297,7 +298,8 @@ Execute Docker commands locally:
 # Set environment variables
 export SNOWFLAKE_ACCOUNT="your_account"
 export SNOWFLAKE_USER="your_user"
-export REGISTRY_URL="<org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo"
+# Use the repository_url column from the previous SQL as REGISTRY_URL
+export REGISTRY_URL="<copy repository_url from SHOW IMAGE REPOSITORIES result>"
 
 # 1. Login to Snowflake image repository
 docker login ${REGISTRY_URL%%/*} -u $SNOWFLAKE_USER
