@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Docker
+*.log
+
+# Secrets - Never commit these
+.env
+*.pem
+*.key
+secrets/
+
+# Model files (too large for git)
+models/
+*.bin
+*.safetensors
+*.gguf

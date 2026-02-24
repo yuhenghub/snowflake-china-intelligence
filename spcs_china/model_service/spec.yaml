@@ -1,0 +1,38 @@
+# SPCS 服务配置 - Qwen vLLM 模型服务
+# 使用 HF-Mirror (hf-mirror.com) 加速下载
+# 计算池: QWEN_GPU_POOL (GPU_NV_S)
+# 端口: 8000 (vLLM), 8001 (Snowflake Proxy)
+
+spec:
+  containers:
+    - name: qwen-vllm
+      image: /spcs_china/model_service/model_service_repo/qwen-service:latest
+      env:
+        MODEL_NAME: Qwen/Qwen2.5-1.5B-Instruct
+        HF_ENDPOINT: https://hf-mirror.com
+      resources:
+        requests:
+          memory: 12Gi
+          cpu: 4
+          nvidia.com/gpu: 1
+        limits:
+          memory: 14Gi
+          cpu: 8
+          nvidia.com/gpu: 1
+      readinessProbe:
+        port: 8001
+        path: /health
+  endpoints:
+    - name: qwen-api
+      port: 8001
+      public: false
+
+# 部署命令:
+# snow sql -c china_dev -q "
+# CREATE SERVICE SPCS_CHINA.MODEL_SERVICE.QWEN_MODEL_SERVICE
+#     IN COMPUTE POOL QWEN_GPU_POOL
+#     MIN_INSTANCES = 1
+#     MAX_INSTANCES = 1
+#     EXTERNAL_ACCESS_INTEGRATIONS = (modelscope_access_integration)
+#     FROM SPECIFICATION_FILE = 'spec.yaml';
+# "

@@ -13,6 +13,23 @@ import yaml
 from loguru import logger
 from snowflake.connector.pandas_tools import write_pandas
 
+
+# 兼容性处理：旧版本 streamlit 不支持 experimental_dialog
+def _compat_dialog(title="Dialog", width="small"):
+    """兼容旧版本 streamlit 的 dialog 装饰器"""
+    if hasattr(st, 'experimental_dialog'):
+        return st.experimental_dialog(title, width=width)
+    elif hasattr(st, 'dialog'):
+        return st.dialog(title, width=width)
+    else:
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                with st.container():
+                    st.subheader(f"📋 {title}")
+                    return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
 # Default Qwen model for LLM Judge
 QWEN_JUDGE_MODEL = os.environ.get("QWEN_JUDGE_MODEL", "qwen-max")
 
@@ -468,7 +485,7 @@ def send_analyst_requests() -> None:
     st.session_state["analyst_results_frame"] = analyst_results_frame
 
 
-@st.experimental_dialog("Evaluation Tables", width="large")
+@_compat_dialog("Evaluation Tables", width="large")
 def evaluation_data_dialog() -> None:
     st.markdown("Please select an evaluation table.")
     st.markdown("The evaluation table should have the following schema:")

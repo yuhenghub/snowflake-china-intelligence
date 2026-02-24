@@ -38,3 +38,20 @@ semantic_model_generator/output_models/*.yaml
 
 # test coverage
 .coverage
+
+# Temporary files
+*.temp
+1.temp
+
+# Deployment scripts with credentials (use examples instead)
+# deploy_prod_user1.sh
+
+# macOS
+.DS_Store
+
+# Credentials and secrets
+**/credentials*
+**/secrets*
+**/*_secret*
+*.pem
+*.key

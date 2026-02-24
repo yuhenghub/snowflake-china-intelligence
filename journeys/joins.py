@@ -3,6 +3,22 @@ from typing import Optional
 import streamlit as st
 from streamlit_extras.row import row
 
+
+# 兼容性处理：旧版本 streamlit 不支持 experimental_dialog
+def _compat_dialog(title="Dialog", width="small"):
+    if hasattr(st, 'experimental_dialog'):
+        return st.experimental_dialog(title, width=width)
+    elif hasattr(st, 'dialog'):
+        return st.dialog(title, width=width)
+    else:
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                with st.container():
+                    st.subheader(f"📋 {title}")
+                    return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
 from app_utils.shared_utils import get_snowflake_connection
 from semantic_model_generator.data_processing.cte_utils import (
     fully_qualified_table_name,
@@ -172,7 +188,7 @@ def relationship_builder(
             st.rerun()
 
 
-@st.experimental_dialog("Join Builder", width="large")
+@_compat_dialog("Join Builder", width="large")
 def joins_dialog() -> None:
     if "builder_joins" not in st.session_state:
         # Making a copy of the original relationships list so we can modify freely without affecting the original.

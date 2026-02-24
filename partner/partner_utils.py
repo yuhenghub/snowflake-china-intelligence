@@ -8,6 +8,22 @@ import pandas as pd
 import streamlit as st
 import yaml
 
+
+# 兼容性处理：旧版本 streamlit 不支持 experimental_dialog
+def _compat_dialog(title="Dialog", width="small"):
+    if hasattr(st, 'experimental_dialog'):
+        return st.experimental_dialog(title, width=width)
+    elif hasattr(st, 'dialog'):
+        return st.dialog(title, width=width)
+    else:
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                with st.container():
+                    st.subheader(f"📋 {title}")
+                    return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
 from app_utils.shared_utils import (
     get_snowflake_connection,
     render_image,
@@ -236,7 +252,7 @@ def compare_data_types(
         return "TEXT"
 
 
-@st.experimental_dialog("Integrate partner tool semantic specs", width="large")
+@_compat_dialog("Integrate partner tool semantic specs", width="large")
 def integrate_partner_semantics() -> None:
     """
     Runs UI module for comparing Cortex and Partner fields for integration.

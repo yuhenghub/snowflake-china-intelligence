@@ -6,6 +6,23 @@ import pandas as pd
 import sqlglot
 import streamlit as st
 from snowflake.connector import ProgrammingError, SnowflakeConnection
+
+
+# 兼容性处理：旧版本 streamlit 不支持 experimental_dialog
+def _compat_dialog(title="Dialog", width="small"):
+    """兼容旧版本 streamlit 的 dialog 装饰器"""
+    if hasattr(st, 'experimental_dialog'):
+        return st.experimental_dialog(title, width=width)
+    elif hasattr(st, 'dialog'):
+        return st.dialog(title, width=width)
+    else:
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                with st.container():
+                    st.subheader(f"📋 {title}")
+                    return func(*args, **kwargs)
+            return wrapper
+        return decorator
 from streamlit import config
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.row import row
@@ -115,7 +132,7 @@ def show_expr_for_ref(message_index: int) -> None:
         st.table(col_df.set_index(col_df.columns[1]))
 
 
-@st.experimental_dialog("Edit", width="large")
+@_compat_dialog("Edit", width="large")
 def edit_verified_query(
     conn: SnowflakeConnection, sql: str, question: str, message_index: int
 ) -> None:
@@ -373,7 +390,7 @@ def chat_and_edit_vqr(_conn: SnowflakeConnection) -> None:
         st.session_state.active_suggestion = None
 
 
-@st.experimental_dialog("Upload", width="small")
+@_compat_dialog("Upload", width="small")
 def upload_dialog(content: str) -> None:
     def upload_handler(file_name: str) -> None:
         if not st.session_state.validated and changed_from_last_validated_model():
@@ -459,7 +476,7 @@ def update_container(
     container.markdown(content)
 
 
-@st.experimental_dialog("Error", width="small")
+@_compat_dialog("Error", width="small")
 def exception_as_dialog(e: Exception) -> None:
     st.error(f"An error occurred: {e}")
 
@@ -578,7 +595,7 @@ def yaml_editor(yaml_str: str) -> None:
         update_container(status_container, "editing", prefix=status_container_title)
 
 
-@st.experimental_dialog("Welcome to the Iteration app! 💬", width="large")
+@_compat_dialog("Welcome to the Iteration app! 💬", width="large")
 def set_up_requirements() -> None:
     """
     Collects existing YAML location from the user so that we can download it.
@@ -629,7 +646,7 @@ def set_up_requirements() -> None:
         st.rerun()
 
 
-@st.experimental_dialog("Chat Settings", width="small")
+@_compat_dialog("Chat Settings", width="small")
 def chat_settings_dialog() -> None:
     """
     Dialog that allows user to toggle on/off certain settings about the chat experience.

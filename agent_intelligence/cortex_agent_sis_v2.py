@@ -1,8 +1,8 @@
 """
 Cortex Agent & Intelligence Demo App for Snowflake China Region
-Streamlit in Snowflake (SiS) 版本
-使用 Qwen API 模拟 Cortex Agent 和 Cortex Intelligence 功能
-支持语义模型 (Semantic Model) 来增强 SQL 生成效果
+Streamlit in Snowflake (SiS) Version
+Using LLM APIs to simulate Cortex Agent and Cortex Intelligence features
+Supports Semantic Model for enhanced SQL generation
 """
 
 import json
@@ -12,34 +12,57 @@ import streamlit as st
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-# 设置页面配置
+# Page configuration
 st.set_page_config(
     layout="wide",
     page_icon="❄️",
-    page_title="Snowflake China Intelligence",
+    page_title="Snowflake China Intelligence V2",
     initial_sidebar_state="expanded"
 )
 
-# SiS 环境检测和连接
+# SiS environment detection and connection
 def get_snowflake_connection():
-    """获取 Snowflake 连接"""
+    """Get Snowflake connection"""
     from snowflake.snowpark.context import get_active_session
     session = get_active_session()
     return session.connection
 
 def get_snowpark_session():
-    """获取 Snowpark Session"""
+    """Get Snowpark Session"""
     from snowflake.snowpark.context import get_active_session
     return get_active_session()
 
+def ensure_warehouse():
+    """Ensure warehouse is set for session - call this early in the app"""
+    if "warehouse_set" not in st.session_state:
+        try:
+            session = get_snowpark_session()
+            # Try to use COMPUTE_WH
+            session.sql("USE WAREHOUSE COMPUTE_WH").collect()
+            st.session_state["warehouse_set"] = True
+        except Exception as e:
+            # If COMPUTE_WH fails, try to find any available warehouse
+            try:
+                session = get_snowpark_session()
+                wh_list = session.sql("SHOW WAREHOUSES").collect()
+                if wh_list:
+                    wh_name = wh_list[0]['name']
+                    session.sql(f"USE WAREHOUSE {wh_name}").collect()
+                    st.session_state["warehouse_set"] = True
+            except Exception:
+                pass
+
+# Initialize warehouse at app startup
+ensure_warehouse()
+
 # ===============================
-# 样式定义 (支持 Light 和 Dark 模式)
+# Style definitions (Light and Dark mode support)
 # ===============================
 CUSTOM_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;700&display=swap');
 
-/* ===== 通用变量 ===== */
+/* ===== Common variables ===== */
 :root {
     --primary-gradient: linear-gradient(135deg, #00D4FF 0%, #7B2CBF 50%, #FF6B6B 100%);
     --accent-cyan: #00D4FF;
@@ -47,13 +70,13 @@ CUSTOM_CSS = """
     --accent-pink: #FF6B6B;
 }
 
-/* ===== Dark Mode (默认) ===== */
+/* ===== Dark Mode (default) ===== */
 [data-testid="stAppViewContainer"],
 .stApp {
-    font-family: 'Noto Sans SC', 'JetBrains Mono', sans-serif;
+    font-family: 'Inter', 'JetBrains Mono', sans-serif;
 }
 
-/* 大标题样式 */
+/* Big title style */
 .big-title {
     font-size: 2.2rem;
     font-weight: 700;
@@ -76,7 +99,7 @@ CUSTOM_CSS = """
     background-clip: text;
 }
 
-/* 问候语样式 */
+/* Greeting style */
 .greeting-text {
     font-size: 1.8rem;
     font-weight: 400;
@@ -84,7 +107,7 @@ CUSTOM_CSS = """
     margin-bottom: 0.3rem;
 }
 
-/* 副标题样式 */
+/* Subtitle style */
 .subtitle-text {
     font-size: 1.3rem;
     font-weight: 500;
@@ -155,7 +178,7 @@ CUSTOM_CSS = """
     -webkit-text-fill-color: transparent;
 }
 
-/* ===== Dark Mode 特定样式 ===== */
+/* ===== Dark Mode specific styles ===== */
 @media (prefers-color-scheme: dark) {
     .greeting-text {
         color: #E8E8E8;
@@ -183,7 +206,7 @@ CUSTOM_CSS = """
     }
 }
 
-/* ===== Light Mode 特定样式 ===== */
+/* ===== Light Mode specific styles ===== */
 @media (prefers-color-scheme: light) {
     .greeting-text {
         color: #1a1a2e;
@@ -212,7 +235,7 @@ CUSTOM_CSS = """
     }
 }
 
-/* Streamlit 主题适配 */
+/* Streamlit theme adaptation */
 [data-theme="light"] .greeting-text,
 [data-baseweb="light"] .greeting-text {
     color: #1a1a2e;
@@ -226,15 +249,40 @@ CUSTOM_CSS = """
 """
 
 # ===============================
-# 模型提供商和模型配置
+# Model Backend Configuration (SPCS or External API)
+# ===============================
+MODEL_BACKENDS = {
+    "SPCS (Local)": {
+        "description": "Snowflake Container Services locally deployed model, data stays in cloud",
+        "icon": "🏠",
+        "udf_path": "SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE"
+    },
+    "External API": {
+        "description": "Call external LLM APIs (DashScope/DeepSeek/Kimi etc.)",
+        "icon": "🌐",
+        "udf_path": "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
+    }
+}
+
+DEFAULT_BACKEND = "External API"
+
+# ===============================
+# SPCS Model Configuration
+# ===============================
+SPCS_MODELS = {
+    "Qwen/Qwen2.5-1.5B-Instruct": "Qwen2.5-1.5B (SPCS Deployed)",
+}
+
+# ===============================
+# External API Model Provider Configuration
 # ===============================
 MODEL_PROVIDERS = {
-    "DashScope (通义千问)": {
+    "DashScope (Qwen)": {
         "models": {
-            "qwen-max": "Qwen-Max (推荐，能力最强)",
-            "qwen-plus": "Qwen-Plus (平衡性能与成本)",
-            "qwen-turbo": "Qwen-Turbo (快速响应)",
-            "qwen-max-longcontext": "Qwen-Max-LongContext (长文本)",
+            "qwen-max": "Qwen-Max (Recommended, Most Capable)",
+            "qwen-plus": "Qwen-Plus (Balanced)",
+            "qwen-turbo": "Qwen-Turbo (Fast Response)",
+            "qwen-max-longcontext": "Qwen-Max-LongContext (Long Text)",
             "qwen2.5-72b-instruct": "Qwen2.5-72B-Instruct",
             "qwen2.5-32b-instruct": "Qwen2.5-32B-Instruct",
         },
@@ -242,79 +290,175 @@ MODEL_PROVIDERS = {
     },
     "DeepSeek": {
         "models": {
-            "deepseek-chat": "DeepSeek-V3 (推荐)",
-            "deepseek-reasoner": "DeepSeek-R1 (深度推理)",
+            "deepseek-chat": "DeepSeek-V3 (Recommended)",
+            "deepseek-reasoner": "DeepSeek-R1 (Deep Reasoning)",
         },
         "default": "deepseek-chat"
     },
-    "Kimi (月之暗面)": {
+    "Kimi (Moonshot)": {
         "models": {
             "moonshot-v1-8k": "Moonshot-v1-8K",
             "moonshot-v1-32k": "Moonshot-v1-32K",
-            "moonshot-v1-128k": "Moonshot-v1-128K (长文本)",
+            "moonshot-v1-128k": "Moonshot-v1-128K (Long Text)",
         },
         "default": "moonshot-v1-8k"
     },
     "MiniMax": {
         "models": {
-            "abab6.5s-chat": "ABAB6.5s (快速)",
-            "abab6.5-chat": "ABAB6.5 (标准)",
+            "abab6.5s-chat": "ABAB6.5s (Fast)",
+            "abab6.5-chat": "ABAB6.5 (Standard)",
             "abab5.5-chat": "ABAB5.5",
         },
         "default": "abab6.5s-chat"
     },
 }
 
-DEFAULT_PROVIDER = "DashScope (通义千问)"
+DEFAULT_PROVIDER = "DashScope (Qwen)"
 DEFAULT_MODEL = "qwen-max"
 
 
 # ===============================
-# 时间问候语生成 (中国时区 UTC+8)
+# Get Current User Info
 # ===============================
-def get_time_greeting(username: str = "Yuheng") -> tuple[str, str]:
-    """根据中国时区时间生成问候语"""
+def get_current_user_info() -> Dict[str, str]:
+    """Get current user information from Snowflake session"""
+    try:
+        # Method 1: Try st.experimental_user (Streamlit in Snowflake)
+        if hasattr(st, 'experimental_user') and st.experimental_user:
+            user_info = st.experimental_user
+            # user_info may contain: user_name, email, etc.
+            if hasattr(user_info, 'user_name'):
+                return {"username": user_info.user_name, "email": getattr(user_info, 'email', '')}
+        
+        # Method 2: Query Snowflake for current user
+        session = get_snowpark_session()
+        result = session.sql("SELECT CURRENT_USER() as username").collect()
+        if result:
+            username = result[0]['USERNAME']
+            # Try to get first name from DESCRIBE USER (may require privileges)
+            try:
+                user_desc = session.sql(f"DESCRIBE USER {username}").collect()
+                first_name = None
+                for row in user_desc:
+                    if row['property'] == 'FIRST_NAME' and row['value']:
+                        first_name = row['value']
+                        break
+                if first_name:
+                    return {"username": username, "first_name": first_name}
+            except Exception:
+                pass
+            return {"username": username}
+    except Exception:
+        pass
+    
+    return {"username": "there"}
+
+
+def get_display_name() -> str:
+    """Get a friendly display name for the current user"""
+    user_info = get_current_user_info()
+    
+    # Priority: first_name > parsed username > default
+    if 'first_name' in user_info and user_info['first_name']:
+        return user_info['first_name']
+    
+    username = user_info.get('username', 'there')
+    
+    # Try to extract a readable name from username
+    # e.g., "JOHN_DOE" -> "John", "john.doe@company.com" -> "John"
+    if username and username != 'there':
+        # Remove email domain if present
+        name_part = username.split('@')[0]
+        # Split by common separators
+        for sep in ['_', '.', '-']:
+            if sep in name_part:
+                name_part = name_part.split(sep)[0]
+                break
+        # Capitalize properly
+        return name_part.capitalize()
+    
+    return "there"
+
+
+# ===============================
+# Time-based Greeting (China Timezone UTC+8)
+# ===============================
+def get_time_greeting(username: str = None) -> str:
+    """Generate greeting based on China timezone"""
     from datetime import timezone, timedelta
     
-    # 中国时区 UTC+8
+    # Get username if not provided
+    if username is None:
+        username = get_display_name()
+    
     china_tz = timezone(timedelta(hours=8))
     china_time = datetime.now(china_tz)
     current_hour = china_time.hour
     
     if 5 <= current_hour < 12:
         greeting = f"Good morning, {username}"
-        greeting_cn = f"早上好，{username}"
-    elif 12 <= current_hour < 14:
+    elif 12 <= current_hour < 18:
         greeting = f"Good afternoon, {username}"
-        greeting_cn = f"中午好，{username}"
-    elif 14 <= current_hour < 18:
-        greeting = f"Good afternoon, {username}"
-        greeting_cn = f"下午好，{username}"
     elif 18 <= current_hour < 22:
         greeting = f"Good evening, {username}"
-        greeting_cn = f"晚上好，{username}"
     else:
         greeting = f"Good night, {username}"
-        greeting_cn = f"夜深了，{username}"
     
-    return greeting, greeting_cn
+    return greeting
 
 
 # ===============================
-# Qwen API 调用 (通过 Snowflake UDF)
+# LLM Calls (SPCS and External API support)
 # ===============================
 
-def call_qwen_udf(conn, model: str, prompt: str, system_prompt: str = None) -> str:
-    """通过 Snowflake UDF 调用 Qwen API"""
+def call_spcs_model(conn, model: str, prompt: str, system_prompt: str = None) -> str:
+    """Call locally deployed model via SPCS service"""
+    
+    # Combine system prompt and user prompt
+    full_prompt = prompt
+    if system_prompt:
+        full_prompt = f"{system_prompt}\n\n{prompt}"
+    
+    escaped_prompt = full_prompt.replace("'", "''")
+    
+    udf_path = MODEL_BACKENDS["SPCS (Local)"]["udf_path"]
+    query = f"SELECT {udf_path}('{escaped_prompt}')"
+    
+    try:
+        # Use Snowpark session for better SiS compatibility
+        session = get_snowpark_session()
+        
+        # Ensure warehouse is active (required for Service Function calls)
+        try:
+            wh_result = session.sql("SELECT CURRENT_WAREHOUSE()").collect()
+            if not wh_result or not wh_result[0][0]:
+                session.sql("USE WAREHOUSE COMPUTE_WH").collect()
+        except Exception:
+            try:
+                session.sql("USE WAREHOUSE COMPUTE_WH").collect()
+            except Exception:
+                pass
+        
+        result = session.sql(query).collect()
+        if result and result[0][0]:
+            return result[0][0]
+        return ""
+    except Exception as e:
+        return f"SPCS call error: {str(e)}"
+
+
+def call_external_api(conn, model: str, prompt: str, system_prompt: str = None) -> str:
+    """Call LLM via external API UDF"""
     escaped_prompt = prompt.replace("'", "''").replace("\\", "\\\\")
     
     if system_prompt:
         escaped_system = system_prompt.replace("'", "''").replace("\\", "\\\\")
-        full_prompt = f"[系统指令]: {escaped_system}\n\n[用户问题]: {escaped_prompt}"
+        full_prompt = f"[System]: {escaped_system}\n\n[User]: {escaped_prompt}"
     else:
         full_prompt = escaped_prompt
     
-    query = f"SELECT SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE('{model}', $${full_prompt}$$)"
+    udf_path = MODEL_BACKENDS["External API"]["udf_path"]
+    query = f"SELECT {udf_path}('{model}', $${full_prompt}$$)"
     
     try:
         cursor = conn.cursor()
@@ -324,25 +468,39 @@ def call_qwen_udf(conn, model: str, prompt: str, system_prompt: str = None) -> s
             return result[0]
         return ""
     except Exception as e:
-        return f"错误: {str(e)}"
+        return f"External API call error: {str(e)}"
+
+
+def call_llm(conn, model: str, prompt: str, system_prompt: str = None) -> str:
+    """Unified LLM call interface, routes to different backends based on selection"""
+    backend = st.session_state.get("model_backend", DEFAULT_BACKEND)
+    
+    if backend == "SPCS (Local)":
+        return call_spcs_model(conn, model, prompt, system_prompt)
+    else:
+        return call_external_api(conn, model, prompt, system_prompt)
+
+
+def call_qwen_udf(conn, model: str, prompt: str, system_prompt: str = None) -> str:
+    """Call LLM via Snowflake UDF (backward compatible)"""
+    return call_llm(conn, model, prompt, system_prompt)
 
 
 # ===============================
-# 语义模型管理
+# Semantic Model Management
 # ===============================
 def load_semantic_model_from_stage(conn, stage_path: str) -> Optional[str]:
-    """从 Stage 加载语义模型 YAML"""
+    """Load semantic model YAML from Stage"""
     try:
         session = get_snowpark_session()
-        # 获取 YAML 内容
         yaml_content = session.file.get_stream(stage_path).read().decode('utf-8')
         return yaml_content
     except Exception as e:
-        st.warning(f"无法加载语义模型: {e}")
+        st.warning(f"Cannot load semantic model: {e}")
         return None
 
 def list_yaml_files_in_stage(conn, stage_name: str) -> List[str]:
-    """列出 Stage 中的 YAML 文件"""
+    """List YAML files in Stage"""
     try:
         cursor = conn.cursor()
         cursor.execute(f"LIST @{stage_name}")
@@ -356,56 +514,55 @@ def list_yaml_files_in_stage(conn, stage_name: str) -> List[str]:
         return []
 
 def parse_semantic_model(yaml_content: str) -> Dict[str, Any]:
-    """解析语义模型 YAML 为结构化数据"""
+    """Parse semantic model YAML to structured data"""
     try:
         import yaml
         model = yaml.safe_load(yaml_content)
         return model
     except Exception:
-        # 简单解析
         return {"raw": yaml_content}
 
 def format_semantic_model_for_prompt(yaml_content: str) -> str:
-    """格式化语义模型用于 LLM 提示"""
+    """Format semantic model for LLM prompt"""
     return f"""
-## 语义模型定义 (YAML)
+## Semantic Model Definition (YAML)
 
-以下是数据的语义模型，包含了表结构、业务含义、指标定义和关系：
+Below is the semantic model for the data, containing table structures, business meanings, metric definitions and relationships:
 
 ```yaml
 {yaml_content}
 ```
 
-请根据这个语义模型来理解数据的业务含义：
-- **name**: 语义层中的字段名称
-- **description**: 字段的业务含义描述
-- **expr**: 字段对应的 SQL 表达式
-- **synonyms**: 同义词，用户可能用这些词来指代该字段
-- **sample_values**: 示例值
-- **data_type**: 数据类型
+Please use this semantic model to understand the business meaning of the data:
+- **name**: Field name in the semantic layer
+- **description**: Business meaning description
+- **expr**: SQL expression for the field
+- **synonyms**: Alternative terms users may use to refer to this field
+- **sample_values**: Example values
+- **data_type**: Data type
 """
 
 
 # ===============================
-# 数据库操作函数
+# Database Operations
 # ===============================
 @st.cache_data(ttl=300)
 def fetch_databases(_conn) -> List[str]:
-    """获取可用数据库列表"""
+    """Get available database list"""
     cursor = _conn.cursor()
     cursor.execute("SHOW DATABASES")
     return [row[1] for row in cursor.fetchall()]
 
 @st.cache_data(ttl=300)
 def fetch_schemas(_conn, database: str) -> List[str]:
-    """获取指定数据库的 Schema 列表"""
+    """Get schema list for specified database"""
     cursor = _conn.cursor()
     cursor.execute(f"SHOW SCHEMAS IN DATABASE {database}")
     return [f"{database}.{row[1]}" for row in cursor.fetchall()]
 
 @st.cache_data(ttl=300)
 def fetch_tables(_conn, schema: str) -> List[str]:
-    """获取指定 Schema 的表列表"""
+    """Get table list for specified schema"""
     cursor = _conn.cursor()
     cursor.execute(f"SHOW TABLES IN {schema}")
     tables = [f"{schema}.{row[1]}" for row in cursor.fetchall()]
@@ -415,13 +572,13 @@ def fetch_tables(_conn, schema: str) -> List[str]:
 
 @st.cache_data(ttl=300)
 def fetch_stages(_conn, schema: str) -> List[str]:
-    """获取指定 Schema 的 Stage 列表"""
+    """Get stage list for specified schema"""
     cursor = _conn.cursor()
     cursor.execute(f"SHOW STAGES IN {schema}")
     return [f"{schema}.{row[1]}" for row in cursor.fetchall()]
 
 def execute_sql(conn, sql: str) -> Dict[str, Any]:
-    """执行 SQL 查询"""
+    """Execute SQL query"""
     try:
         cursor = conn.cursor()
         cursor.execute(sql)
@@ -438,7 +595,7 @@ def execute_sql(conn, sql: str) -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 def get_table_info(conn, table_name: str) -> Dict[str, Any]:
-    """获取表结构信息"""
+    """Get table structure information"""
     try:
         cursor = conn.cursor()
         cursor.execute(f"DESC TABLE {table_name}")
@@ -459,106 +616,106 @@ def get_table_info(conn, table_name: str) -> Dict[str, Any]:
 
 
 # ===============================
-# Agent 核心逻辑 (支持语义模型)
+# Agent Core Logic (Semantic Model Support)
 # ===============================
-AGENT_SYSTEM_PROMPT_WITH_SEMANTIC = """你是一个专业的数据分析助手，运行在 Snowflake 环境中。
+AGENT_SYSTEM_PROMPT_WITH_SEMANTIC = """You are a professional data analysis assistant running in Snowflake environment.
 
-## 重要：语义模型
+## Important: Semantic Model
 
-你必须参考以下语义模型来理解数据的业务含义。语义模型定义了：
-- 字段的业务名称和描述
-- 计算指标的公式
-- 字段的同义词（用户可能用不同的词描述同一个字段）
-- 表之间的关系
+You must refer to the following semantic model to understand business meanings. The semantic model defines:
+- Business names and descriptions of fields
+- Formulas for calculated metrics
+- Synonyms for fields (users may use different terms)
+- Relationships between tables
 
 {semantic_model}
 
-## 可用工具:
+## Available Tools:
 
-1. **execute_sql** - 执行 SQL 查询
-   参数: sql (string) - SQL 查询语句
+1. **execute_sql** - Execute SQL query
+   Parameters: sql (string) - SQL query statement
 
-2. **get_table_info** - 获取表信息
-   参数: table_name (string) - 完全限定的表名
+2. **get_table_info** - Get table information
+   Parameters: table_name (string) - Fully qualified table name
 
-## 响应格式:
+## Response Format:
 
-当需要调用工具时，请使用以下 JSON 格式：
+When calling a tool, use this JSON format:
 ```json
 {{
-  "thought": "你的思考过程，包括如何根据语义模型理解用户意图",
+  "thought": "Your thinking process, including how to understand user intent based on semantic model",
   "tool_call": {{
-    "name": "工具名称",
+    "name": "tool_name",
     "parameters": {{
-      "参数名": "参数值"
+      "param_name": "param_value"
     }}
   }}
 }}
 ```
 
-当不需要调用工具，直接回答时：
+When answering directly without tools:
 ```json
 {{
-  "thought": "你的思考过程",
-  "response": "你的回答内容"
+  "thought": "Your thinking process",
+  "response": "Your answer content"
 }}
 ```
 
-## 重要规则:
+## Important Rules:
 
-1. **必须参考语义模型**：根据语义模型中的 description 和 synonyms 来理解用户问题
-2. **使用正确的表达式**：使用语义模型中定义的 expr 作为 SQL 字段表达式
-3. **理解业务术语**：用户可能使用业务术语而非字段名，需要映射到正确的字段
-4. SQL 查询必须是有效的 Snowflake SQL 语法
-5. 使用中文回答
+1. **Must refer to semantic model**: Use description and synonyms to understand user questions
+2. **Use correct expressions**: Use expr defined in semantic model as SQL field expressions
+3. **Understand business terms**: Users may use business terms instead of field names, map them correctly
+4. SQL queries must be valid Snowflake SQL syntax
+5. Answer in English
 
-当前上下文:
-- 数据库: {database}
+Current Context:
+- Database: {database}
 - Schema: {schema}
 """
 
-AGENT_SYSTEM_PROMPT_WITHOUT_SEMANTIC = """你是一个专业的数据分析助手，运行在 Snowflake 环境中。
+AGENT_SYSTEM_PROMPT_WITHOUT_SEMANTIC = """You are a professional data analysis assistant running in Snowflake environment.
 
-## 可用工具:
+## Available Tools:
 
-1. **execute_sql** - 执行 SQL 查询
-   参数: sql (string) - SQL 查询语句
+1. **execute_sql** - Execute SQL query
+   Parameters: sql (string) - SQL query statement
 
-2. **get_table_info** - 获取表信息
-   参数: table_name (string) - 完全限定的表名
+2. **get_table_info** - Get table information
+   Parameters: table_name (string) - Fully qualified table name
 
-## 响应格式:
+## Response Format:
 
-当需要调用工具时：
+When calling a tool:
 ```json
 {{
-  "thought": "你的思考过程",
+  "thought": "Your thinking process",
   "tool_call": {{
-    "name": "工具名称",
-    "parameters": {{"参数名": "参数值"}}
+    "name": "tool_name",
+    "parameters": {{"param_name": "param_value"}}
   }}
 }}
 ```
 
-当直接回答时：
+When answering directly:
 ```json
 {{
-  "thought": "你的思考过程",
-  "response": "你的回答内容"
+  "thought": "Your thinking process",
+  "response": "Your answer content"
 }}
 ```
 
-请用中文回答。
+Please answer in English.
 
-当前上下文:
-- 数据库: {database}
+Current Context:
+- Database: {database}
 - Schema: {schema}
-- 可用表: {tables}
+- Available Tables: {tables}
 """
 
 
 def parse_agent_response(response: str) -> Dict[str, Any]:
-    """解析 Agent 的响应"""
+    """Parse Agent response"""
     import re
     try:
         json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
@@ -576,34 +733,31 @@ def parse_agent_response(response: str) -> Dict[str, Any]:
 
 
 def run_agent(conn, user_input: str, context: Dict) -> Dict[str, Any]:
-    """运行 Agent"""
+    """Run Agent"""
     semantic_model = context.get("semantic_model")
     
     if semantic_model:
-        # 使用语义模型增强的提示
         formatted_model = format_semantic_model_for_prompt(semantic_model)
         system_prompt = AGENT_SYSTEM_PROMPT_WITH_SEMANTIC.format(
             semantic_model=formatted_model,
-            database=context.get("database", "未选择"),
-            schema=context.get("schema", "未选择")
+            database=context.get("database", "Not selected"),
+            schema=context.get("schema", "Not selected")
         )
     else:
-        # 无语义模型的基础提示
         system_prompt = AGENT_SYSTEM_PROMPT_WITHOUT_SEMANTIC.format(
-            database=context.get("database", "未选择"),
-            schema=context.get("schema", "未选择"),
+            database=context.get("database", "Not selected"),
+            schema=context.get("schema", "Not selected"),
             tables=", ".join(context.get("tables", [])[:10])
         )
     
     messages = context.get("messages", [])
     history_text = ""
     for msg in messages[-6:]:
-        role = "用户" if msg["role"] == "user" else "助手"
+        role = "User" if msg["role"] == "user" else "Assistant"
         history_text += f"\n{role}: {msg['content']}\n"
     
-    full_prompt = f"{history_text}\n用户: {user_input}"
+    full_prompt = f"{history_text}\nUser: {user_input}"
     
-    # 使用 session state 中选择的模型
     model = st.session_state.get("selected_model", DEFAULT_MODEL)
     response = call_qwen_udf(conn, model, full_prompt, system_prompt)
     parsed = parse_agent_response(response)
@@ -612,107 +766,114 @@ def run_agent(conn, user_input: str, context: Dict) -> Dict[str, Any]:
 
 
 def execute_tool_call(conn, tool_name: str, parameters: Dict, context: Dict) -> Dict[str, Any]:
-    """执行工具调用"""
+    """Execute tool call"""
     if tool_name == "execute_sql":
         return execute_sql(conn, parameters.get("sql", ""))
     elif tool_name == "get_table_info":
         return get_table_info(conn, parameters.get("table_name", ""))
     else:
-        return {"success": False, "error": f"未知工具: {tool_name}"}
+        return {"success": False, "error": f"Unknown tool: {tool_name}"}
 
 
 # ===============================
-# Intelligence 功能 (支持语义模型)
+# Intelligence Features (Semantic Model Support)
 # ===============================
 def generate_data_insights(conn, df: pd.DataFrame, context: str = "", semantic_model: str = None) -> str:
-    """使用 AI 生成数据洞察"""
+    """Generate data insights using AI"""
     summary = f"""
-数据概览:
-- 行数: {len(df)}
-- 列数: {len(df.columns)}
-- 列名: {', '.join(df.columns.tolist())}
+Data Overview:
+- Rows: {len(df)}
+- Columns: {len(df.columns)}
+- Column Names: {', '.join(df.columns.tolist())}
 
-数据统计:
-{df.describe().to_string() if len(df) > 0 else '无数据'}
+Statistics:
+{df.describe().to_string() if len(df) > 0 else 'No data'}
 
-前5行数据示例:
-{df.head().to_string() if len(df) > 0 else '无数据'}
+Sample Data (first 5 rows):
+{df.head().to_string() if len(df) > 0 else 'No data'}
 """
     
     semantic_context = ""
     if semantic_model:
         semantic_context = f"""
-## 语义模型参考
-以下语义模型定义了数据的业务含义，请据此解读数据：
+## Semantic Model Reference
+The semantic model below defines business meanings of the data, use it to interpret:
 ```yaml
-{semantic_model[:2000]}  # 截取前2000字符
+{semantic_model[:2000]}
 ```
 """
     
-    prompt = f"""请分析以下数据并提供专业的商业洞察:
+    prompt = f"""Please analyze the following data and provide professional business insights:
 
 {summary}
 
 {semantic_context}
 
-{f"用户查询背景: {context}" if context else ""}
+{f"Query Context: {context}" if context else ""}
 
-请提供:
-1. 数据的关键发现 (3-5点)
-2. 基于语义模型的业务解读
-3. 建议的后续分析方向
+Please provide:
+1. Key findings (3-5 points)
+2. Business interpretation based on semantic model
+3. Suggested follow-up analysis directions
 
-请用专业但易懂的中文回答。
+Please answer in professional but easy-to-understand English.
 """
     
-    # 使用 session state 中选择的模型
     model = st.session_state.get("selected_model", DEFAULT_MODEL)
     return call_qwen_udf(conn, model, prompt)
 
 
 def generate_sql_from_question(conn, question: str, schema_info: Dict, tables: List[str], semantic_model: str = None) -> str:
-    """根据自然语言问题生成 SQL（支持语义模型）"""
+    """Generate SQL from natural language question (with semantic model support)"""
     
     semantic_context = ""
     if semantic_model:
         semantic_context = f"""
-## 重要：语义模型
+## Important: Semantic Model
 
-请根据以下语义模型来理解数据的业务含义，并生成正确的 SQL：
+Please use the following semantic model to understand business meanings and generate correct SQL:
 
 ```yaml
 {semantic_model}
 ```
 
-规则：
-1. 根据语义模型中的 description 理解字段含义
-2. 使用语义模型中的 expr 作为 SQL 表达式
-3. 参考 synonyms 来匹配用户使用的业务术语
-4. 如果用户问的指标在语义模型中有定义，使用定义的计算公式
+Rules:
+1. Use description in semantic model to understand field meanings
+2. Use expr in semantic model as SQL expressions
+3. Refer to synonyms to match business terms used by user
+4. If user asks about metrics defined in semantic model, use the defined calculation formulas
 """
     
-    prompt = f"""请根据以下问题生成 Snowflake SQL 查询:
+    # Build table list with explicit full paths
+    table_list_str = "\n".join([f"- {t}" for t in tables])
+    
+    # Get example full table name for the prompt
+    example_table = tables[0] if tables else "DATABASE.SCHEMA.TABLE"
+    
+    prompt = f"""Please generate a Snowflake SQL query based on the following question:
 
-问题: {question}
+Question: {question}
 
 {semantic_context}
 
-可用表: {', '.join(tables)}
+Available Tables (MUST use these EXACT full names in your SQL):
+{table_list_str}
 
-表结构信息:
+Table Schema Information:
 {json.dumps(schema_info, indent=2, ensure_ascii=False)}
 
-要求:
-1. 生成有效的 Snowflake SQL
-2. 只返回 SQL 语句，不要任何解释
-3. 使用完全限定的表名
-4. 添加 LIMIT 100 限制结果数量
-5. 如果有语义模型，必须参考其中的字段定义和表达式
+CRITICAL REQUIREMENTS:
+1. MUST use fully qualified table names with database.schema.table format
+   - CORRECT: SELECT * FROM {example_table}
+   - WRONG: SELECT * FROM {example_table.split('.')[-1] if '.' in example_table else 'TABLE_NAME'}
+2. Generate valid Snowflake SQL only
+3. Return ONLY the SQL statement, no explanation or markdown
+4. Add LIMIT 100 to limit results
+5. If semantic model exists, must refer to field definitions and expressions
 
 SQL:
 """
     
-    # 使用 session state 中选择的模型
     model = st.session_state.get("selected_model", DEFAULT_MODEL)
     response = call_qwen_udf(conn, model, prompt)
     
@@ -733,44 +894,43 @@ SQL:
 
 
 def suggest_questions(conn, tables: List[str], schema_info: Dict, semantic_model: str = None) -> List[str]:
-    """根据表结构和语义模型建议问题"""
+    """Suggest questions based on table structure and semantic model"""
     
     semantic_context = ""
     if semantic_model:
         semantic_context = f"""
-语义模型（包含业务定义）：
+Semantic Model (contains business definitions):
 ```yaml
 {semantic_model[:1500]}
 ```
 
-请根据语义模型中定义的指标和维度来建议问题。
+Please suggest questions based on metrics and dimensions defined in the semantic model.
 """
     
-    prompt = f"""基于以下数据信息，建议5个有价值的数据分析问题:
+    prompt = f"""Based on the following data information, suggest 5 valuable data analysis questions:
 
-可用表: {', '.join(tables[:5])}
+Available Tables: {', '.join(tables[:5])}
 
-表结构信息:
+Table Schema Information:
 {json.dumps(schema_info, indent=2, ensure_ascii=False)}
 
 {semantic_context}
 
-请生成5个具体、可执行的数据分析问题，每行一个问题。
-如果有语义模型，请使用其中定义的业务术语来提问。
-只输出问题，不要编号。
+Please generate 5 specific, actionable data analysis questions, one per line.
+If there's a semantic model, use business terms defined in it.
+Output only questions, no numbering.
 """
     
-    # 使用快速模型来生成建议问题
     response = call_qwen_udf(conn, "qwen-turbo", prompt)
     questions = [q.strip() for q in response.strip().split('\n') if q.strip()]
     return questions[:5]
 
 
 # ===============================
-# UI 组件
+# UI Components
 # ===============================
 def render_message(role: str, content: str, tool_info: Dict = None):
-    """渲染聊天消息"""
+    """Render chat message"""
     if role == "user":
         st.markdown(f'<div class="user-message">{content}</div>', unsafe_allow_html=True)
     else:
@@ -778,14 +938,14 @@ def render_message(role: str, content: str, tool_info: Dict = None):
         if tool_info:
             st.markdown(f"""
             <div class="tool-card">
-                🔧 工具调用: <strong>{tool_info.get('name', 'unknown')}</strong><br>
-                参数: {json.dumps(tool_info.get('parameters', {}), ensure_ascii=False)}
+                🔧 Tool Call: <strong>{tool_info.get('name', 'unknown')}</strong><br>
+                Parameters: {json.dumps(tool_info.get('parameters', {}), ensure_ascii=False)}
             </div>
             """, unsafe_allow_html=True)
 
 
-def render_data_preview(df: pd.DataFrame, title: str = "数据预览"):
-    """渲染数据预览"""
+def render_data_preview(df: pd.DataFrame, title: str = "Data Preview"):
+    """Render data preview"""
     st.markdown(f"### 📊 {title}")
     st.dataframe(
         df,
@@ -795,26 +955,26 @@ def render_data_preview(df: pd.DataFrame, title: str = "数据预览"):
 
 
 # ===============================
-# 主应用
+# Main Application
 # ===============================
 def main():
-    # 注入自定义样式
+    # Inject custom styles
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     
-    # 获取时间问候语 (使用中国时区 UTC+8)
-    greeting_en, greeting_cn = get_time_greeting("Yuheng")
+    # Get time-based greeting (automatically gets current user's name)
+    greeting = get_time_greeting()
     
-    # 大标题 + 问候语 + 副标题
+    # Big title + greeting + subtitle
     st.markdown('''
     <div class="big-title">
         <span class="snowflake-icon">❄️</span>
-        <span class="title-text">Snowflake China Intelligence</span>
+        <span class="title-text">Snowflake China Intelligence V2</span>
     </div>
     ''', unsafe_allow_html=True)
-    st.markdown(f'<div class="greeting-text">{greeting_en}</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle-text">What insights can I help with?</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="greeting-text">{greeting}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle-text">What insights can I help you discover?</div>', unsafe_allow_html=True)
     
-    # 初始化 session state
+    # Initialize session state
     if "agent_messages" not in st.session_state:
         st.session_state.agent_messages = []
     
@@ -836,70 +996,117 @@ def main():
     if "semantic_model_name" not in st.session_state:
         st.session_state.semantic_model_name = None
     
+    if "model_backend" not in st.session_state:
+        st.session_state.model_backend = DEFAULT_BACKEND
+    
     if "selected_provider" not in st.session_state:
         st.session_state.selected_provider = DEFAULT_PROVIDER
     
     if "selected_model" not in st.session_state:
         st.session_state.selected_model = DEFAULT_MODEL
     
-    # 获取连接
+    # Get connection
     try:
         conn = get_snowflake_connection()
     except Exception as e:
-        st.error(f"无法连接到 Snowflake: {e}")
+        st.error(f"Cannot connect to Snowflake: {e}")
         return
     
-    # 侧边栏 - 数据源和语义模型选择
+    # Sidebar - Data source and semantic model selection
     with st.sidebar:
-        st.markdown("### 🧠 模型选择")
+        st.markdown("### 🧠 Model Selection")
         
-        # 模型提供商选择
-        provider_list = list(MODEL_PROVIDERS.keys())
-        selected_provider = st.selectbox(
-            "选择模型提供商",
-            options=provider_list,
-            index=provider_list.index(st.session_state.selected_provider) if st.session_state.selected_provider in provider_list else 0,
-            key="provider_selector"
+        # ===== Model Backend Selection (SPCS or External API) =====
+        backend_list = list(MODEL_BACKENDS.keys())
+        selected_backend = st.radio(
+            "Select Model Backend",
+            options=backend_list,
+            index=backend_list.index(st.session_state.model_backend) if st.session_state.model_backend in backend_list else 1,
+            key="backend_selector",
+            horizontal=True,
+            help="SPCS: Local deployment, data stays in cloud | External API: Call cloud LLM"
         )
         
-        # 如果提供商变化，更新默认模型
-        if selected_provider != st.session_state.selected_provider:
-            st.session_state.selected_provider = selected_provider
-            st.session_state.selected_model = MODEL_PROVIDERS[selected_provider]["default"]
+        # If backend changed
+        if selected_backend != st.session_state.model_backend:
+            st.session_state.model_backend = selected_backend
+            if selected_backend == "SPCS (Local)":
+                st.session_state.selected_model = list(SPCS_MODELS.keys())[0]
+            else:
+                st.session_state.selected_model = MODEL_PROVIDERS[st.session_state.selected_provider]["default"]
         
-        # 子模型选择
-        provider_models = MODEL_PROVIDERS[selected_provider]["models"]
-        model_list = list(provider_models.keys())
+        # Display backend info
+        backend_info = MODEL_BACKENDS[selected_backend]
+        st.caption(f"{backend_info['icon']} {backend_info['description']}")
         
-        # 确保当前选中的模型在列表中
-        current_model_index = 0
-        if st.session_state.selected_model in model_list:
-            current_model_index = model_list.index(st.session_state.selected_model)
+        # ===== Show different model selection based on backend =====
+        if selected_backend == "SPCS (Local)":
+            # SPCS model selection
+            spcs_model_list = list(SPCS_MODELS.keys())
+            current_spcs_index = 0
+            if st.session_state.selected_model in spcs_model_list:
+                current_spcs_index = spcs_model_list.index(st.session_state.selected_model)
+            
+            selected_model = st.selectbox(
+                "Select SPCS Model",
+                options=spcs_model_list,
+                index=current_spcs_index,
+                format_func=lambda x: SPCS_MODELS[x],
+                key="spcs_model_selector"
+            )
+            
+            if selected_model != st.session_state.selected_model:
+                st.session_state.selected_model = selected_model
+            
+            st.success(f"🏠 **SPCS** / `{selected_model.split('/')[-1]}`")
+            
+            st.info("💡 SPCS model runs in Snowflake Container Services, data never leaves Snowflake.")
         
-        selected_model = st.selectbox(
-            "选择模型",
-            options=model_list,
-            index=current_model_index,
-            format_func=lambda x: provider_models[x],
-            key="model_selector"
-        )
-        
-        if selected_model != st.session_state.selected_model:
-            st.session_state.selected_model = selected_model
-        
-        st.caption(f"📍 **{selected_provider}** / `{selected_model}`")
+        else:
+            # External API - model provider selection
+            provider_list = list(MODEL_PROVIDERS.keys())
+            selected_provider = st.selectbox(
+                "Select Model Provider",
+                options=provider_list,
+                index=provider_list.index(st.session_state.selected_provider) if st.session_state.selected_provider in provider_list else 0,
+                key="provider_selector"
+            )
+            
+            if selected_provider != st.session_state.selected_provider:
+                st.session_state.selected_provider = selected_provider
+                st.session_state.selected_model = MODEL_PROVIDERS[selected_provider]["default"]
+            
+            provider_models = MODEL_PROVIDERS[selected_provider]["models"]
+            model_list = list(provider_models.keys())
+            
+            current_model_index = 0
+            if st.session_state.selected_model in model_list:
+                current_model_index = model_list.index(st.session_state.selected_model)
+            
+            selected_model = st.selectbox(
+                "Select Model",
+                options=model_list,
+                index=current_model_index,
+                format_func=lambda x: provider_models[x],
+                key="model_selector"
+            )
+            
+            if selected_model != st.session_state.selected_model:
+                st.session_state.selected_model = selected_model
+            
+            st.caption(f"🌐 **{selected_provider}** / `{selected_model}`")
         
         st.markdown("---")
-        st.markdown("### 🗄️ 数据源配置")
+        st.markdown("### 🗄️ Data Source")
         
-        # 数据库选择
+        # Database selection
         try:
             databases = fetch_databases(conn)
         except Exception:
             databases = []
         
         selected_db = st.selectbox(
-            "选择数据库",
+            "Select Database",
             options=databases,
             index=0 if databases else None,
             key="db_selector"
@@ -911,12 +1118,12 @@ def main():
             st.session_state.available_tables = []
             st.session_state.semantic_model = None
         
-        # Schema 选择
+        # Schema selection
         if selected_db:
             try:
                 schemas = fetch_schemas(conn, selected_db)
                 selected_schema = st.selectbox(
-                    "选择 Schema",
+                    "Select Schema",
                     options=schemas,
                     index=0 if schemas else None,
                     key="schema_selector",
@@ -930,28 +1137,28 @@ def main():
                     except Exception:
                         st.session_state.available_tables = []
             except Exception:
-                st.warning("无法获取 Schema 列表")
+                st.warning("Cannot get schema list")
         
-        # ===== 语义模型配置 =====
+        # ===== Semantic Model Configuration =====
         st.markdown("---")
-        st.markdown("### 📚 语义模型")
+        st.markdown("### 📚 Semantic Model")
         
         if st.session_state.semantic_model:
-            st.success(f"✅ 已加载: {st.session_state.semantic_model_name}")
-            if st.button("🗑️ 卸载语义模型"):
+            st.success(f"✅ Loaded: {st.session_state.semantic_model_name}")
+            if st.button("🗑️ Unload Semantic Model"):
                 st.session_state.semantic_model = None
                 st.session_state.semantic_model_name = None
                 st.experimental_rerun()
         else:
-            st.info("💡 加载语义模型可提升 SQL 生成准确性")
+            st.info("💡 Loading a semantic model improves SQL generation accuracy")
         
-        # 从 Stage 加载语义模型
+        # Load semantic model from Stage
         if st.session_state.selected_schema:
             try:
                 stages = fetch_stages(conn, st.session_state.selected_schema)
                 if stages:
                     selected_stage = st.selectbox(
-                        "选择 Stage",
+                        "Select Stage",
                         options=stages,
                         format_func=lambda x: x.split(".")[-1],
                         key="stage_selector"
@@ -961,80 +1168,80 @@ def main():
                         yaml_files = list_yaml_files_in_stage(conn, selected_stage)
                         if yaml_files:
                             selected_yaml = st.selectbox(
-                                "选择语义模型文件",
+                                "Select Semantic Model File",
                                 options=yaml_files,
                                 format_func=lambda x: x.split("/")[-1],
                                 key="yaml_selector"
                             )
                             
-                            if st.button("📥 加载语义模型", type="primary"):
-                                with st.spinner("加载中..."):
+                            if st.button("📥 Load Semantic Model", type="primary"):
+                                with st.spinner("Loading..."):
                                     yaml_content = load_semantic_model_from_stage(conn, f"@{selected_stage}/{selected_yaml.split('/')[-1]}")
                                     if yaml_content:
                                         st.session_state.semantic_model = yaml_content
                                         st.session_state.semantic_model_name = selected_yaml.split("/")[-1]
-                                        st.success("✅ 语义模型加载成功！")
+                                        st.success("✅ Semantic model loaded!")
                                         st.experimental_rerun()
                         else:
-                            st.caption("该 Stage 中没有 YAML 文件")
+                            st.caption("No YAML files in this Stage")
             except Exception as e:
-                st.caption(f"无法列出 Stage: {e}")
+                st.caption(f"Cannot list Stage: {e}")
         
-        # 手动输入语义模型
-        with st.expander("📝 手动输入语义模型"):
+        # Manual semantic model input
+        with st.expander("📝 Manual Input"):
             manual_yaml = st.text_area(
-                "粘贴语义模型 YAML",
+                "Paste Semantic Model YAML",
                 height=200,
-                placeholder="粘贴您的语义模型 YAML 内容..."
+                placeholder="Paste your semantic model YAML content..."
             )
-            if st.button("应用语义模型"):
+            if st.button("Apply Semantic Model"):
                 if manual_yaml.strip():
                     st.session_state.semantic_model = manual_yaml
-                    st.session_state.semantic_model_name = "手动输入"
-                    st.success("✅ 语义模型已应用！")
+                    st.session_state.semantic_model_name = "Manual Input"
+                    st.success("✅ Semantic model applied!")
                     st.experimental_rerun()
         
-        # 显示可用表
+        # Display available tables
         st.markdown("---")
         if st.session_state.available_tables:
-            st.markdown("### 📋 可用数据表")
+            st.markdown("### 📋 Available Tables")
             for table in st.session_state.available_tables[:10]:
                 table_name = table.split(".")[-1]
                 st.markdown(f"- `{table_name}`")
             if len(st.session_state.available_tables) > 10:
-                st.caption(f"... 还有 {len(st.session_state.available_tables) - 10} 张表")
+                st.caption(f"... and {len(st.session_state.available_tables) - 10} more tables")
         
         st.markdown("---")
         
-        # 清除对话按钮
-        if st.button("🗑️ 清除对话", use_container_width=True):
+        # Clear conversation button
+        if st.button("🗑️ Clear Conversation", use_container_width=True):
             st.session_state.agent_messages = []
             st.session_state.last_query_result = None
             st.experimental_rerun()
     
-    # 主要内容区 - 标签页
-    tab1, tab2, tab3 = st.tabs(["🤖 智能对话 (Agent)", "📈 数据洞察 (Intelligence)", "🔧 工具箱"])
+    # Main content area - Tabs
+    tab1, tab2, tab3 = st.tabs(["🤖 Agent Chat", "📈 Data Insights", "🔧 Toolbox"])
     
-    # ===== Tab 1: Agent 对话 =====
+    # ===== Tab 1: Agent Chat =====
     with tab1:
-        # 语义模型状态提示
+        # Semantic model status
         if st.session_state.semantic_model:
             st.markdown(f"""
             <div class="feature-card">
-                <span class="semantic-badge">🎯 语义模型已启用</span>
-                <h3 style="margin-top: 1rem;">💬 与 AI 助手对话</h3>
-                <p>语义模型 <strong>{st.session_state.semantic_model_name}</strong> 已加载，AI 将参考业务定义来理解您的问题。</p>
+                <span class="semantic-badge">🎯 Semantic Model Enabled</span>
+                <h3 style="margin-top: 1rem;">💬 Chat with AI Assistant</h3>
+                <p>Semantic model <strong>{st.session_state.semantic_model_name}</strong> loaded. AI will use business definitions to understand your questions.</p>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
             <div class="feature-card">
-                <h3>💬 与 AI 助手对话</h3>
-                <p>⚠️ <strong>提示</strong>：未加载语义模型，SQL 生成仅基于表结构。建议在侧边栏加载语义模型以获得更好的效果。</p>
+                <h3>💬 Chat with AI Assistant</h3>
+                <p>⚠️ <strong>Note</strong>: No semantic model loaded. SQL generation is based on table structure only. Load a semantic model in the sidebar for better results.</p>
             </div>
             """, unsafe_allow_html=True)
         
-        # 对话历史
+        # Conversation history
         chat_container = st.container()
         with chat_container:
             for msg in st.session_state.agent_messages:
@@ -1044,9 +1251,9 @@ def main():
                     msg.get("tool_info")
                 )
                 if msg.get("data") is not None:
-                    render_data_preview(msg["data"], "查询结果")
+                    render_data_preview(msg["data"], "Query Results")
         
-        # 输入框 (使用 text_input 替代 chat_input 以兼容 SiS)
+        # Input box
         def submit_question():
             if st.session_state.user_question_input:
                 st.session_state.submitted_question = st.session_state.user_question_input
@@ -1055,41 +1262,37 @@ def main():
         col_input, col_btn = st.columns([5, 1])
         with col_input:
             st.text_input(
-                "输入你的问题",
+                "Enter your question",
                 key="user_question_input",
                 placeholder="Ask Snowflake Intelligence...",
                 label_visibility="collapsed",
                 on_change=submit_question
             )
         with col_btn:
-            if st.button("发送", type="primary", use_container_width=True):
+            if st.button("Send", type="primary", use_container_width=True):
                 submit_question()
         
-        # 处理提交的问题
+        # Process submitted question
         user_input = st.session_state.pop("submitted_question", None)
         
         if user_input:
-            # 添加用户消息
             st.session_state.agent_messages.append({
                 "role": "user",
                 "content": user_input
             })
             
-            # 准备上下文
             context = {
                 "database": st.session_state.selected_database,
                 "schema": st.session_state.selected_schema,
                 "tables": st.session_state.available_tables,
                 "messages": st.session_state.agent_messages,
                 "last_query_result": st.session_state.last_query_result,
-                "semantic_model": st.session_state.semantic_model  # 传入语义模型
+                "semantic_model": st.session_state.semantic_model
             }
             
-            # 运行 Agent
-            with st.spinner("🤔 思考中（参考语义模型）..." if st.session_state.semantic_model else "🤔 思考中..."):
+            with st.spinner("🤔 Thinking (with semantic model)..." if st.session_state.semantic_model else "🤔 Thinking..."):
                 response = run_agent(conn, user_input, context)
             
-            # 处理响应
             thought = response.get("thought", "")
             tool_call = response.get("tool_call")
             direct_response = response.get("response")
@@ -1107,21 +1310,21 @@ def main():
                 
                 agent_message["tool_info"] = {"name": tool_name, "parameters": parameters}
                 
-                with st.spinner(f"🔧 执行 {tool_name}..."):
+                with st.spinner(f"🔧 Executing {tool_name}..."):
                     result = execute_tool_call(conn, tool_name, parameters, context)
                 
                 if result.get("success"):
                     if "data" in result:
                         agent_message["data"] = result["data"]
                         st.session_state.last_query_result = result["data"]
-                        agent_message["content"] = f"{thought}\n\n✅ 查询成功，返回 {result['row_count']} 行数据。"
+                        agent_message["content"] = f"{thought}\n\n✅ Query successful, returned {result['row_count']} rows."
                     elif "columns" in result:
                         cols_info = "\n".join([f"- {c['name']}: {c['type']}" for c in result['columns']])
-                        agent_message["content"] = f"{thought}\n\n📋 表 `{result['table_name']}` 结构 (共 {result['row_count']} 行):\n{cols_info}"
+                        agent_message["content"] = f"{thought}\n\n📋 Table `{result['table_name']}` structure ({result['row_count']} rows):\n{cols_info}"
                     else:
-                        agent_message["content"] = f"{thought}\n\n✅ 执行成功。"
+                        agent_message["content"] = f"{thought}\n\n✅ Execution successful."
                 else:
-                    agent_message["content"] = f"{thought}\n\n❌ 执行失败: {result.get('error', '未知错误')}"
+                    agent_message["content"] = f"{thought}\n\n❌ Execution failed: {result.get('error', 'Unknown error')}"
             
             elif direct_response:
                 agent_message["content"] = direct_response
@@ -1136,32 +1339,31 @@ def main():
         if st.session_state.semantic_model:
             st.markdown(f"""
             <div class="feature-card">
-                <span class="semantic-badge">🎯 语义模型已启用</span>
-                <h3 style="margin-top: 1rem;">📊 智能数据洞察</h3>
-                <p>使用语义模型 <strong>{st.session_state.semantic_model_name}</strong> 来理解您的业务问题。</p>
+                <span class="semantic-badge">🎯 Semantic Model Enabled</span>
+                <h3 style="margin-top: 1rem;">📊 Intelligent Data Insights</h3>
+                <p>Using semantic model <strong>{st.session_state.semantic_model_name}</strong> to understand your business questions.</p>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
             <div class="feature-card">
-                <h3>📊 智能数据洞察</h3>
-                <p>用自然语言描述你想查询的内容。⚠️ 建议先加载语义模型以获得更准确的结果。</p>
+                <h3>📊 Intelligent Data Insights</h3>
+                <p>Describe what you want to query in natural language. ⚠️ Load a semantic model first for more accurate results.</p>
             </div>
             """, unsafe_allow_html=True)
         
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.markdown("### 🔍 自然语言查询")
+            st.markdown("### 🔍 Natural Language Query")
             nl_query = st.text_area(
-                "用自然语言描述你想查询的内容",
-                placeholder="例如：查询过去一个月每天的订单数量和总金额\n\n如果有语义模型，可以使用业务术语如：VIP客户、销售额、退货率等",
+                "Describe what you want to query",
+                placeholder="e.g., Show me daily order count and total amount for the past month\n\nWith semantic model, you can use business terms like: VIP customers, revenue, return rate, etc.",
                 height=100
             )
             
-            if st.button("🚀 生成并执行查询", type="primary"):
+            if st.button("🚀 Generate and Execute Query", type="primary"):
                 if nl_query and st.session_state.available_tables:
-                    # 获取表结构信息
                     schema_info = {}
                     for table in st.session_state.available_tables[:5]:
                         try:
@@ -1171,41 +1373,39 @@ def main():
                         except Exception:
                             pass
                     
-                    with st.spinner("🧠 生成 SQL（参考语义模型）..." if st.session_state.semantic_model else "🧠 生成 SQL..."):
+                    with st.spinner("🧠 Generating SQL (with semantic model)..." if st.session_state.semantic_model else "🧠 Generating SQL..."):
                         sql = generate_sql_from_question(
                             conn, nl_query, schema_info, 
                             st.session_state.available_tables,
-                            st.session_state.semantic_model  # 传入语义模型
+                            st.session_state.semantic_model
                         )
                     
-                    st.markdown("**生成的 SQL:**")
+                    st.markdown("**Generated SQL:**")
                     st.code(sql, language="sql")
                     
-                    # 执行查询
-                    with st.spinner("⚡ 执行查询..."):
+                    with st.spinner("⚡ Executing query..."):
                         result = execute_sql(conn, sql)
                     
                     if result["success"]:
                         st.session_state.last_query_result = result["data"]
                         render_data_preview(result["data"])
                         
-                        # 生成洞察
-                        with st.spinner("💡 生成数据洞察..."):
+                        with st.spinner("💡 Generating insights..."):
                             insights = generate_data_insights(
                                 conn, result["data"], nl_query,
-                                st.session_state.semantic_model  # 传入语义模型
+                                st.session_state.semantic_model
                             )
                         
-                        st.markdown("### 💡 AI 洞察")
+                        st.markdown("### 💡 AI Insights")
                         st.markdown(insights)
                     else:
-                        st.error(f"查询失败: {result['error']}")
+                        st.error(f"Query failed: {result['error']}")
                 else:
-                    st.warning("请先选择数据源并输入查询内容")
+                    st.warning("Please select a data source and enter query content")
         
         with col2:
-            st.markdown("### 💡 建议的问题")
-            if st.session_state.available_tables and st.button("生成建议"):
+            st.markdown("### 💡 Suggested Questions")
+            if st.session_state.available_tables and st.button("Generate Suggestions"):
                 schema_info = {}
                 for table in st.session_state.available_tables[:3]:
                     try:
@@ -1215,103 +1415,104 @@ def main():
                     except Exception:
                         pass
                 
-                with st.spinner("生成建议问题..."):
+                with st.spinner("Generating suggested questions..."):
                     questions = suggest_questions(
                         conn, st.session_state.available_tables, schema_info,
-                        st.session_state.semantic_model  # 传入语义模型
+                        st.session_state.semantic_model
                     )
                 
                 for q in questions:
                     st.info(f"📌 {q}")
     
-    # ===== Tab 3: 工具箱 =====
+    # ===== Tab 3: Toolbox =====
     with tab3:
         st.markdown("""
         <div class="feature-card">
-            <h3>🔧 数据工具箱</h3>
-            <p>直接使用 SQL 查询和表信息查询工具。</p>
+            <h3>🔧 Data Toolbox</h3>
+            <p>Direct access to SQL query and table information tools.</p>
         </div>
         """, unsafe_allow_html=True)
         
-        tool_tabs = st.tabs(["SQL 查询", "表信息", "数据统计", "语义模型预览"])
+        tool_tabs = st.tabs(["SQL Query", "Table Info", "Statistics", "Semantic Model"])
         
-        # SQL 查询工具
+        # SQL Query tool
         with tool_tabs[0]:
-            st.markdown("### 📝 SQL 查询")
+            st.markdown("### 📝 SQL Query")
             sql_input = st.text_area(
-                "输入 SQL 查询",
+                "Enter SQL Query",
                 height=150,
                 placeholder="SELECT * FROM your_table LIMIT 10"
             )
             
-            if st.button("▶️ 执行查询", key="run_sql"):
+            if st.button("▶️ Execute Query", key="run_sql"):
                 if sql_input:
-                    with st.spinner("执行中..."):
+                    with st.spinner("Executing..."):
                         result = execute_sql(conn, sql_input)
                     
                     if result["success"]:
-                        st.success(f"查询成功，返回 {result['row_count']} 行")
+                        st.success(f"Query successful, returned {result['row_count']} rows")
                         st.session_state.last_query_result = result["data"]
                         render_data_preview(result["data"])
                     else:
-                        st.error(f"查询失败: {result['error']}")
+                        st.error(f"Query failed: {result['error']}")
         
-        # 表信息工具
+        # Table Info tool
         with tool_tabs[1]:
-            st.markdown("### 📋 表结构查询")
+            st.markdown("### 📋 Table Structure")
             if st.session_state.available_tables:
                 selected_table = st.selectbox(
-                    "选择表",
+                    "Select Table",
                     st.session_state.available_tables,
                     format_func=lambda x: x.split(".")[-1]
                 )
                 
-                if st.button("🔍 查看结构", key="view_schema"):
-                    with st.spinner("获取表信息..."):
+                if st.button("🔍 View Structure", key="view_schema"):
+                    with st.spinner("Getting table info..."):
                         result = get_table_info(conn, selected_table)
                     
                     if result["success"]:
-                        st.markdown(f"**表名:** `{result['table_name']}`")
-                        st.markdown(f"**行数:** {result['row_count']:,}")
+                        st.markdown(f"**Table:** `{result['table_name']}`")
+                        st.markdown(f"**Rows:** {result['row_count']:,}")
                         
                         cols_df = pd.DataFrame(result["columns"])
                         st.dataframe(cols_df, use_container_width=True)
                     else:
                         st.error(result["error"])
             else:
-                st.info("请先在侧边栏选择数据库和 Schema")
+                st.info("Please select a database and schema in the sidebar first")
         
-        # 数据统计工具
+        # Statistics tool
         with tool_tabs[2]:
-            st.markdown("### 📊 数据统计")
+            st.markdown("### 📊 Data Statistics")
             if st.session_state.last_query_result is not None:
                 df = st.session_state.last_query_result
                 
-                st.markdown(f"**数据维度:** {len(df)} 行 × {len(df.columns)} 列")
+                st.markdown(f"**Dimensions:** {len(df)} rows × {len(df.columns)} columns")
                 
-                st.markdown("**描述性统计:**")
+                st.markdown("**Descriptive Statistics:**")
                 st.dataframe(df.describe(), use_container_width=True)
                 
-                st.markdown("**数据类型:**")
+                st.markdown("**Data Types:**")
                 dtype_df = pd.DataFrame({
-                    "列名": df.columns,
-                    "数据类型": df.dtypes.astype(str).values,
-                    "非空数量": df.count().values,
-                    "空值数量": df.isnull().sum().values
+                    "Column": df.columns,
+                    "Data Type": df.dtypes.astype(str).values,
+                    "Non-Null Count": df.count().values,
+                    "Null Count": df.isnull().sum().values
                 })
                 st.dataframe(dtype_df, use_container_width=True)
             else:
-                st.info("请先执行查询以获取数据")
+                st.info("Execute a query first to see data statistics")
         
-        # 语义模型预览
+        # Semantic Model Preview
         with tool_tabs[3]:
-            st.markdown("### 📚 语义模型预览")
+            st.markdown("### 📚 Semantic Model Preview")
             if st.session_state.semantic_model:
-                st.markdown(f"**当前加载:** `{st.session_state.semantic_model_name}`")
+                st.markdown(f"**Currently Loaded:** `{st.session_state.semantic_model_name}`")
                 st.code(st.session_state.semantic_model, language="yaml")
             else:
-                st.info("未加载语义模型。请在侧边栏加载语义模型。")
+                st.info("No semantic model loaded. Load one in the sidebar.")
 
 
 if __name__ == "__main__":
     main()
+

@@ -13,7 +13,7 @@ echo "=========================================="
 SNOW_CONNECTION="china_dev"
 DATABASE="SNOWFLAKE_PROD_USER1"
 SCHEMA="CORTEX_ANALYST"
-QWEN_API_KEY="${QWEN_API_KEY:-sk-974d67fdc0744f1fb0723686c810f327}"
+QWEN_API_KEY="${QWEN_API_KEY:-<YOUR_QWEN_API_KEY>}"
 
 # 检查 Snow CLI
 if ! command -v snow &> /dev/null; then

@@ -2,6 +2,22 @@ import streamlit as st
 from loguru import logger
 from snowflake.connector import ProgrammingError
 
+
+# 兼容性处理：旧版本 streamlit 不支持 experimental_dialog
+def _compat_dialog(title="Dialog", width="small"):
+    if hasattr(st, 'experimental_dialog'):
+        return st.experimental_dialog(title, width=width)
+    elif hasattr(st, 'dialog'):
+        return st.dialog(title, width=width)
+    else:
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                with st.container():
+                    st.subheader(f"📋 {title}")
+                    return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
 from app_utils.shared_utils import (
     GeneratorAppScreen,
     format_snowflake_context,
@@ -68,7 +84,7 @@ def update_tables() -> None:
     st.session_state["selected_tables"] = valid_selected_tables
 
 
-@st.experimental_dialog("Selecting your tables", width="large")
+@_compat_dialog("Selecting your tables", width="large")
 def table_selector_dialog() -> None:
     st.write(
         "Please fill out the following fields to start building your semantic model."

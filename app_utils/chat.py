@@ -8,10 +8,23 @@ import requests
 import streamlit as st
 from snowflake.connector import SnowflakeConnection
 
+def _get_snowpark_session():
+    """Get Snowpark Session for SiS compatibility"""
+    try:
+        from snowflake.snowpark.context import get_active_session
+        return get_active_session()
+    except Exception:
+        return None
+
 API_ENDPOINT = "https://{HOST}/api/v2/cortex/analyst/message"
 
 # Default Qwen model for SQL generation
 QWEN_SQL_MODEL = os.environ.get("QWEN_SQL_MODEL", "qwen-max")
+
+
+def _get_selected_model() -> str:
+    """获取当前选择的模型"""
+    return st.session_state.get("selected_model", QWEN_SQL_MODEL)
 
 
 def _is_china_region_chat(conn: SnowflakeConnection) -> bool:
@@ -78,17 +91,87 @@ SQL: {sql}
 请用一句话解释："""
 
 
+# ============================================
+# 模型后端配置
+# ============================================
+MODEL_BACKENDS_CHAT = {
+    "SPCS (本地)": {
+        "udf_path": "SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE"
+    },
+    "外部 API": {
+        "udf_path": "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
+    }
+}
+
+DEFAULT_BACKEND_CHAT = "外部 API"
+
+
+def _get_model_backend() -> str:
+    """获取当前选择的模型后端"""
+    return st.session_state.get("model_backend", DEFAULT_BACKEND_CHAT)
+
+
 def _get_qwen_udf_path() -> str:
-    """获取 Qwen UDF 的完整路径"""
-    default_path = "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
-    return st.session_state.get("qwen_udf_path", default_path)
+    """获取 Qwen UDF 的完整路径，根据后端选择返回对应路径"""
+    # 首先检查是否有自定义 UDF 路径
+    custom_path = st.session_state.get("qwen_udf_path", "")
+    if custom_path and custom_path != "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE":
+        return custom_path
+    
+    # 根据后端返回对应的 UDF 路径
+    backend = _get_model_backend()
+    if backend in MODEL_BACKENDS_CHAT:
+        return MODEL_BACKENDS_CHAT[backend]["udf_path"]
+    
+    return "SNOWFLAKE_PROD_USER1.CORTEX_ANALYST.QWEN_COMPLETE"
 
 
-def _call_qwen_udf(conn: SnowflakeConnection, model: str, prompt: str) -> str:
-    """Call Qwen UDF in Snowflake to generate response."""
-    # Escape single quotes in prompt
+def _call_spcs_model(conn: SnowflakeConnection, model: str, prompt: str) -> str:
+    """Call locally deployed model via SPCS service."""
+    
+    # 直接使用简单的 prompt 调用 /complete 端点
+    escaped_prompt = prompt.replace("'", "''")
+    
+    udf_path = MODEL_BACKENDS_CHAT["SPCS (本地)"]["udf_path"]
+    query = f"SELECT {udf_path}('{escaped_prompt}')"
+    
+    try:
+        # 使用 Snowpark session 以获得更好的 SiS 兼容性
+        session = _get_snowpark_session()
+        
+        if session:
+            # 确保有活动的 warehouse（Service Function 调用需要）
+            try:
+                wh_result = session.sql("SELECT CURRENT_WAREHOUSE()").collect()
+                if not wh_result or not wh_result[0][0]:
+                    session.sql("USE WAREHOUSE COMPUTE_WH").collect()
+            except Exception:
+                try:
+                    session.sql("USE WAREHOUSE COMPUTE_WH").collect()
+                except Exception:
+                    pass
+            
+            result = session.sql(query).collect()
+            if result and result[0][0]:
+                return result[0][0]
+            return ""
+        else:
+            # Fallback to cursor
+            cursor = conn.cursor()
+            cursor.execute("USE WAREHOUSE COMPUTE_WH")
+            cursor.execute(query)
+            result = cursor.fetchone()
+            if result and result[0]:
+                return result[0]
+            return ""
+    except Exception as e:
+        raise ValueError(f"SPCS call error: {str(e)}")
+
+
+def _call_external_api(conn: SnowflakeConnection, model: str, prompt: str) -> str:
+    """Call LLM via external API UDF."""
     escaped_prompt = prompt.replace("'", "''").replace("\\", "\\\\")
-    udf_path = _get_qwen_udf_path()
+    udf_path = MODEL_BACKENDS_CHAT["外部 API"]["udf_path"]
     query = f"SELECT {udf_path}('{model}', $${escaped_prompt}$$)"
     
     try:
@@ -99,7 +182,20 @@ def _call_qwen_udf(conn: SnowflakeConnection, model: str, prompt: str) -> str:
             return result[0]
         return ""
     except Exception as e:
-        raise ValueError(f"Qwen API 调用失败: {str(e)}")
+        raise ValueError(f"外部 API 调用失败: {str(e)}")
+
+
+def _call_qwen_udf(conn: SnowflakeConnection, model: str, prompt: str) -> str:
+    """
+    Call Qwen UDF in Snowflake to generate response.
+    Routes to different backends based on user selection.
+    """
+    backend = _get_model_backend()
+    
+    if backend == "SPCS (本地)":
+        return _call_spcs_model(conn, model, prompt)
+    else:
+        return _call_external_api(conn, model, prompt)
 
 
 def _generate_sql_with_qwen(
@@ -117,7 +213,9 @@ def _generate_sql_with_qwen(
         question=question
     )
     
-    sql_response = _call_qwen_udf(conn, QWEN_SQL_MODEL, sql_prompt)
+    # 使用用户选择的模型
+    selected_model = _get_selected_model()
+    sql_response = _call_qwen_udf(conn, selected_model, sql_prompt)
     sql_response = sql_response.strip()
     
     # Check if Qwen couldn't answer

@@ -1,0 +1,22 @@
+# SPCS Model Service Dependencies
+# 本地运行 Qwen 模型
+
+# Web 框架
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+
+# ModelScope - 中国区模型下载
+modelscope==1.11.0
+
+# Transformers 推理
+transformers==4.37.0
+accelerate==0.26.0
+torch==2.1.2
+
+# 可选: vLLM 高性能推理 (如果环境支持)
+# vllm==0.3.0
+
+# 其他依赖
+sentencepiece==0.1.99
+protobuf==4.25.2

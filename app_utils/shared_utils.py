@@ -86,7 +86,25 @@ def set_streamlit_location() -> bool:
     return sis
 
 
-@st.experimental_dialog(title="Setup")
+# 兼容性处理：旧版本 streamlit 不支持 experimental_dialog
+def _compat_dialog(title="Dialog", width="small"):
+    """兼容旧版本 streamlit 的 dialog 装饰器"""
+    if hasattr(st, 'experimental_dialog'):
+        return st.experimental_dialog(title, width=width)
+    elif hasattr(st, 'dialog'):
+        return st.dialog(title, width=width)
+    else:
+        # 旧版本不支持 dialog，返回一个简单的装饰器
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                with st.container():
+                    st.subheader(f"📋 {title}")
+                    return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
+
+@_compat_dialog(title="Setup")
 def env_setup_popup(missing_env_vars: list[str]) -> None:
     """
     Renders a dialog box to prompt the user to set the required connection setup.
@@ -601,7 +619,7 @@ def init_session_states() -> None:
         st.session_state.confirmed_edits = False
 
 
-@st.experimental_dialog("Edit Dimension")  # type: ignore[misc]
+@_compat_dialog("Edit Dimension")  # type: ignore[misc]
 def edit_dimension(table_name: str, dim: semantic_model_pb2.Dimension) -> None:
     """
     Renders a dialog box to edit an existing dimension.
@@ -651,7 +669,7 @@ def edit_dimension(table_name: str, dim: semantic_model_pb2.Dimension) -> None:
         st.rerun()
 
 
-@st.experimental_dialog("Add Dimension")  # type: ignore[misc]
+@_compat_dialog("Add Dimension")  # type: ignore[misc]
 def add_dimension(table: semantic_model_pb2.Table) -> None:
     """
     Renders a dialog box to add a new dimension.
@@ -690,7 +708,7 @@ def add_dimension(table: semantic_model_pb2.Table) -> None:
         st.rerun()
 
 
-@st.experimental_dialog("Edit Measure/Fact")  # type: ignore[misc]
+@_compat_dialog("Edit Measure/Fact")  # type: ignore[misc]
 def edit_measure(table_name: str, measure: semantic_model_pb2.Fact) -> None:
     """
     Renders a dialog box to edit an existing measure.
@@ -763,7 +781,7 @@ def edit_measure(table_name: str, measure: semantic_model_pb2.Fact) -> None:
         st.rerun()
 
 
-@st.experimental_dialog("Add Measure/Fact")  # type: ignore[misc]
+@_compat_dialog("Add Measure/Fact")  # type: ignore[misc]
 def add_measure(table: semantic_model_pb2.Table) -> None:
     """
     Renders a dialog box to add a new measure.
@@ -823,7 +841,7 @@ def add_measure(table: semantic_model_pb2.Table) -> None:
         st.rerun()
 
 
-@st.experimental_dialog("Edit Time Dimension")  # type: ignore[misc]
+@_compat_dialog("Edit Time Dimension")  # type: ignore[misc]
 def edit_time_dimension(
     table_name: str, tdim: semantic_model_pb2.TimeDimension
 ) -> None:
@@ -868,7 +886,7 @@ def edit_time_dimension(
         st.rerun()
 
 
-@st.experimental_dialog("Add Time Dimension")  # type: ignore[misc]
+@_compat_dialog("Add Time Dimension")  # type: ignore[misc]
 def add_time_dimension(table: semantic_model_pb2.Table) -> None:
     """
     Renders a dialog box to add a new time dimension.
@@ -1066,7 +1084,7 @@ def display_table(table_name: str) -> None:
         add_time_dimension(table)
 
 
-@st.experimental_dialog("Add Table")  # type: ignore[misc]
+@_compat_dialog("Add Table")  # type: ignore[misc]
 def add_new_table() -> None:
     """
     Renders a dialog box to add a new logical table.
@@ -1183,7 +1201,7 @@ def import_yaml() -> None:
             st.rerun()
 
 
-@st.experimental_dialog("Model YAML", width="large")  # type: ignore
+@_compat_dialog("Model YAML", width="large")  # type: ignore
 def show_yaml_in_dialog() -> None:
     yaml = proto_to_yaml(st.session_state.semantic_model)
     st.code(
