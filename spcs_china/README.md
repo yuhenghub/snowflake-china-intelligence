@@ -296,27 +296,76 @@ SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
 -- 示例输出: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
 ```
 
-在本地执行 Docker 命令：
+在本地执行 Docker/Snowflake CLI 命令：
 
 ```bash
 # 设置环境变量
 export SNOWFLAKE_ACCOUNT="your_account"
-export SNOWFLAKE_USER="your_user"
-# 使用上一条 SQL 的 repository_url 列作为 REGISTRY_URL
 export REGISTRY_URL="<从 SHOW IMAGE REPOSITORIES 结果中复制的 repository_url>"
+```
 
-# 1. 登录到 Snowflake 镜像仓库
-docker login ${REGISTRY_URL%%/*} -u $SNOWFLAKE_USER
+#### 推荐方式一：使用 Snowflake CLI 生成 registry token（适用于 SSO / key pair / OAuth）
 
-# 2. 构建 Docker 镜像
+这种方式对 **禁用用户名密码** 的账户最通用，只要能用 Snowflake CLI 连上 Snowflake（SSO、key pair 等都可以）。
+
+1. 安装并配置 [Snowflake CLI (snow)](https://docs.snowflake.com/en/developer-guide/snowflake-cli-v2/index)，保证可以用你们的认证方式连上 Snowflake。
+
+2. 通过 CLI 为 Docker 生成镜像仓库专用 token，并登录：
+
+```bash
+# 使用配置好的 connection（例如 default 或 spcs_conn）
+snow spcs image-registry token --connection spcs_conn --format=JSON \
+  | jq -r '.token' \
+  | docker login ${REGISTRY_URL%%/*} -u 0sessiontoken --password-stdin
+```
+
+> **说明：**
+> - 用户名必须是固定值 `0sessiontoken`；
+> - 密码是 `snow spcs image-registry token` 输出的 token；
+> - 该用户/角色需要对仓库有 `READ, WRITE ON IMAGE REPOSITORY` 权限。
+
+#### 推荐方式二：使用 Snowflake Programmatic Access Token（PAT）
+
+如果账户已经启用了 [Programmatic Access Token (PAT)](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)，也可以直接用 PAT 登录镜像仓库：
+
+```bash
+# 假设你已经在 Snowflake 为某个用户生成了 PAT
+export PAT_TOKEN="<Snowflake Programmatic Access Token>"
+
+docker login ${REGISTRY_URL%%/*} -u USER -p "$PAT_TOKEN"
+```
+
+> **注意：**
+> - 用户名必须是大写的 `USER`（不是 Snowflake 登录名）；
+> - PAT 对应的用户/角色需要对目标 IMAGE REPOSITORY 拥有 `READ, WRITE` 权限；
+> - 如果用户名不是 `USER` 或 PAT 已过期，会导致 "access token 无效" 错误。
+
+#### （不推荐）用户名/密码方式
+
+只有在账户 **允许用户名/密码登录** 且满足 MFA 要求时，才可以使用用户名/密码方式登录镜像仓库。例如：
+
+```bash
+export SNOWFLAKE_USER="your_user"
+
+docker login ${REGISTRY_URL%%/*} -u "$SNOWFLAKE_USER"
+```
+
+> 由于很多企业账户禁用了密码登录，或者必须通过 MFA，这种方式在实际环境中经常不可用，因此本项目推荐优先使用 **方式一（registry token）** 或 **方式二（PAT）**。
+
+#### 构建与推送镜像
+
+完成 `docker login` 后，后续构建与推送步骤保持不变：
+
+```bash
+# 1. 构建 Docker 镜像
 cd spcs_china/model_service
 docker build -t qwen-service:latest .
 
-# 3. 标记并推送镜像
+# 2. 标记并推送镜像
 docker tag qwen-service:latest ${REGISTRY_URL}/qwen-service:latest
 docker push ${REGISTRY_URL}/qwen-service:latest
 
-# 4. 验证上传
+# 3. 验证上传
 snow sql -q "SHOW IMAGES IN IMAGE REPOSITORY SPCS_CHINA.MODEL_SERVICE.MODEL_SERVICE_REPO;"
 ```
 
