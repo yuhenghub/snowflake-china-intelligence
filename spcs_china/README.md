@@ -305,19 +305,17 @@ SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
 在 Snowflake 中执行以下 SQL 创建 PAT：
 
 ```sql
--- 创建一个有效期 30 天的 PAT Token
-ALTER USER <your_username> ADD PROGRAMMATIC ACCESS TOKEN
-    TOKEN_NAME = 'docker_registry_token'
-    TOKEN_VALIDITY_IN_DAYS = 30
+-- 创建一个有效期 7 天的 PAT Token（可根据需要调整天数）
+ALTER USER ADD PROGRAMMATIC ACCESS TOKEN docker_registry_token
+    DAYS_TO_EXPIRY = 7
     COMMENT = 'Token for Docker registry login';
-
--- 查看已创建的 Token（注意：Token 值只在创建时显示一次，请妥善保存）
-SHOW PROGRAMMATIC ACCESS TOKENS FOR USER <your_username>;
 ```
 
+执行成功后，结果中会显示 `token_name` 和 `token_secret` 两列，**直接从 `token_secret` 列复制 Token 值**。
+
 > **重要提示：**
-> - PAT Token 只在创建时显示一次，请立即复制并安全保存
-> - 如果忘记 Token，需要删除后重新创建：`ALTER USER <your_username> REMOVE PROGRAMMATIC ACCESS TOKEN TOKEN_NAME = 'docker_registry_token';`
+> - `token_secret` 只在创建时显示一次，请立即复制并安全保存
+> - 如需删除 Token：`ALTER USER REMOVE PROGRAMMATIC ACCESS TOKEN docker_registry_token;`
 > - 更多信息请参考 [Snowflake PAT 文档](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)
 
 **Step 2: 查询 Image Repository URL**
