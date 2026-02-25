@@ -1,6 +1,8 @@
-# Deploy Self-Hosted LLM Service in Snowflake China Region: A SPCS-Based Solution
+# SPCS Self-Hosted LLM Service
 
-> As enterprises strengthen data security governance, achieving secure and controlled interaction between data and AI has become a significant challenge. This guide presents a complete solution based on Snowflake Container Services (SPCS) to deploy and run open-source large language models within Snowflake, enabling unified data and AI integration in Snowflake China region.
+**A core component of Snowflake China Intelligence**
+
+> A private LLM solution based on Snowflake Container Services (SPCS). Deploy and run open-source large language models within Snowflake China region, ensuring data stays in-region and meets enterprise compliance requirements.
 
 ---
 

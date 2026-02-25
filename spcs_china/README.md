@@ -1,8 +1,10 @@
-# 在 Snowflake 中国区部署自托管 LLM 服务：基于 SPCS 的解决方案
+# SPCS 私有化 LLM 服务
+
+**Snowflake China Intelligence** 的核心组件之一
 
 [English Version](./README_EN.md) | 中文版
 
-> 随着企业逐步加强对数据安全的管控，如何在数据和 AI 的交互上实现安全可控成为一个很大的挑战。本文介绍一个基于 Snowflake Container Services (SPCS) 的完整解决方案，在 Snowflake 内部署和运行开源大语言模型，实现 Snowflake 中国区统一环境内的数据与 AI 集成。
+> 基于 Snowflake Container Services (SPCS) 的私有化 LLM 解决方案。在 Snowflake 中国区内部署和运行开源大语言模型，确保数据不出境，满足企业数据合规要求。
 
 ---
 
