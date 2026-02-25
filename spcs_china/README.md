@@ -296,34 +296,61 @@ SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
 -- 示例输出: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
 ```
 
-#### 登录镜像仓库
+#### 登录镜像仓库（使用 PAT Token）
 
-在本地执行以下命令登录 Snowflake 镜像仓库：
+由于很多企业账户禁用了用户名/密码登录，推荐使用 **Programmatic Access Token (PAT)** 登录镜像仓库。
 
-```bash
-# 1. 查询 Image Repositories，获取 repository_url
-snow sql -c <your_connection> -q "SHOW IMAGE REPOSITORIES;"
+**Step 1: 创建 PAT Token**
 
-# 2. 获取 registry token
-snow spcs image-registry token --connection <your_connection>
-# 输出示例: eyJraWQiOiIz...（JWT token）
+在 Snowflake 中执行以下 SQL 创建 PAT：
 
-# 3. 使用 token 登录 Docker Registry
-# 将 <REGISTRY_HOST> 替换为 repository_url 的域名部分（如 xxx-xxx.registry.snowflakecomputing.cn）
-# 将 <TOKEN> 替换为上一步获取的 token
-echo "<TOKEN>" | docker login <REGISTRY_HOST> -u SNOW_PROD_USER --password-stdin
+```sql
+-- 创建一个有效期 30 天的 PAT Token
+ALTER USER <your_username> ADD PROGRAMMATIC ACCESS TOKEN
+    TOKEN_NAME = 'docker_registry_token'
+    TOKEN_VALIDITY_IN_DAYS = 30
+    COMMENT = 'Token for Docker registry login';
+
+-- 查看已创建的 Token（注意：Token 值只在创建时显示一次，请妥善保存）
+SHOW PROGRAMMATIC ACCESS TOKENS FOR USER <your_username>;
 ```
 
-**示例（请替换为您的实际值）：**
+> **重要提示：**
+> - PAT Token 只在创建时显示一次，请立即复制并安全保存
+> - 如果忘记 Token，需要删除后重新创建：`ALTER USER <your_username> REMOVE PROGRAMMATIC ACCESS TOKEN TOKEN_NAME = 'docker_registry_token';`
+> - 更多信息请参考 [Snowflake PAT 文档](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)
+
+**Step 2: 查询 Image Repository URL**
 
 ```bash
-# 获取 token 并登录（一行命令）
-snow spcs image-registry token --connection my_conn | docker login xxx-xxx.registry.snowflakecomputing.cn -u SNOW_PROD_USER --password-stdin
+# 使用 Snowflake CLI 查询
+snow sql -c <your_connection> -q "SHOW IMAGE REPOSITORIES;"
+
+# 或在 Snowflake Worksheet 中执行
+# SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
+```
+
+从结果中复制 `repository_url` 列的值，例如：`xxx-xxx.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo`
+
+**Step 3: 使用 PAT Token 登录 Docker Registry**
+
+```bash
+# 将 <PAT_TOKEN> 替换为 Step 1 中获取的 Token
+# 将 <REGISTRY_HOST> 替换为 repository_url 的域名部分
+# 将 <YOUR_USERNAME> 替换为您的 Snowflake 用户名
+
+echo "<PAT_TOKEN>" | docker login <REGISTRY_HOST> -u <YOUR_USERNAME> --password-stdin
+```
+
+**示例：**
+
+```bash
+echo "eyJraWQiOiIz..." | docker login xxx-xxx.registry.snowflakecomputing.cn -u MY_USER --password-stdin
 ```
 
 > **说明：**
-> - 用户名固定为 `SNOW_PROD_USER`
-> - 密码是 `snow spcs image-registry token` 输出的 JWT token
+> - 用户名是您的 **Snowflake 用户名**（创建 PAT 的用户）
+> - 密码是 **PAT Token**（不是 Snowflake 登录密码）
 > - 该用户/角色需要对仓库有 `READ, WRITE ON IMAGE REPOSITORY` 权限
 
 #### 构建与推送镜像
