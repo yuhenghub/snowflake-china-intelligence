@@ -2,7 +2,7 @@
 
 **A core component of Snowflake China Intelligence**
 
-> A private LLM solution based on Snowflake Container Services (SPCS). Deploy and run open-source large language models within Snowflake China region, ensuring data stays in-region and meets enterprise compliance requirements.
+> A private LLM solution based on Snowflake Container Services (SPCS). Deploy and run open-source large language models within the Snowflake platform, ensuring data stays within the platform and meets enterprise compliance requirements.
 
 ---
 
@@ -41,7 +41,7 @@ spcs_china/
 
 This solution provides powerful AI capabilities for China region customers based on **Snowflake Container Services (SPCS)**:
 
-- ✅ **Data Compliance**: Models run entirely within Snowflake China region, data stays in-region, meeting regulatory requirements
+- ✅ **Data Compliance**: Models run entirely within the Snowflake platform, data stays within the platform, meeting compliance requirements
 - ✅ **Ready to Use**: Provides Cortex LLM-like experience via UDF, no need to change existing workflows
 - ✅ **Flexible Customization**: Freedom to choose and deploy open-source models for different business scenarios
 - ✅ **Cost Effective**: GPU on-demand usage with auto-suspend support for effective cost control
@@ -51,7 +51,7 @@ This solution provides powerful AI capabilities for China region customers based
 We designed a self-hosted LLM solution based on **Snowflake Container Services (SPCS)**:
 
 1. **Use Open-Source Models**: Deploy Alibaba's Qwen series models
-2. **Local Deployment**: Models run entirely within Snowflake China region, data stays in-region
+2. **Local Deployment**: Models run entirely within the Snowflake platform, data stays within the platform
 3. **Seamless Integration**: Provide a Cortex LLM-like experience via UDF
 4. **GPU Acceleration**: Leverage SPCS GPU compute pools for efficient inference
 
@@ -559,7 +559,7 @@ ALTER SERVICE QWEN_MODEL_SERVICE
 ### Use Cases
 
 - China region customers need AI capabilities within Snowflake
-- Strict data security requirements, no data can leave the region
+- Strict data security requirements, data must stay within the platform
 - Need integration with existing Snowflake workflows (SQL, Streamlit)
 - Transitional solution while waiting for Cortex LLM China region launch
 

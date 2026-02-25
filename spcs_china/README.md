@@ -4,7 +4,7 @@
 
 [English Version](./README_EN.md) | 中文版
 
-> 基于 Snowflake Container Services (SPCS) 的私有化 LLM 解决方案。在 Snowflake 中国区内部署和运行开源大语言模型，确保数据不出境，满足企业数据合规要求。
+> 基于 Snowflake Container Services (SPCS) 的私有化 LLM 解决方案。在 Snowflake 平台内部署和运行开源大语言模型，确保数据不出数据平台，满足企业数据合规要求。
 
 ---
 
@@ -43,7 +43,7 @@ spcs_china/
 
 本方案基于 **Snowflake Container Services (SPCS)** 为中国区客户提供强大的 AI 能力：
 
-- ✅ **数据合规**：模型完全运行在 Snowflake 中国区内，数据不出境，满足监管要求
+- ✅ **数据合规**：模型完全运行在 Snowflake 平台内，数据不出数据平台，满足合规要求
 - ✅ **开箱即用**：通过 UDF 提供与 Cortex LLM 类似的调用体验，无需改变现有工作流
 - ✅ **灵活定制**：可自由选择和部署开源模型，满足不同业务场景需求
 - ✅ **成本可控**：GPU 按需使用，支持自动暂停，有效控制成本
@@ -53,7 +53,7 @@ spcs_china/
 我们设计了一个基于 **Snowflake Container Services (SPCS)** 的自托管 LLM 方案：
 
 1. **使用开源模型**：部署阿里通义千问 (Qwen) 系列模型
-2. **本地化部署**：模型完全运行在 Snowflake 中国区内，数据不出境
+2. **本地化部署**：模型完全运行在 Snowflake 平台内，数据不出数据平台
 3. **无缝集成**：通过 UDF 提供与 Cortex LLM 类似的调用体验
 4. **GPU 加速**：利用 SPCS 的 GPU 计算池实现高效推理
 
@@ -548,7 +548,7 @@ ALTER SERVICE QWEN_MODEL_SERVICE
 
 ### 方案优势
 
-✅ **数据不出境**：模型完全运行在 Snowflake 中国区内，满足合规要求
+✅ **数据不出平台**：模型完全运行在 Snowflake 平台内，满足合规要求
 
 ✅ **无缝集成**：通过 UDF 提供类似 Cortex LLM 的调用体验
 
