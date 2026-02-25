@@ -290,32 +290,83 @@ CREATE IMAGE REPOSITORY IF NOT EXISTS MODEL_SERVICE_REPO
 
 -- Get repository URL
 SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
--- Copy the full URL from the repository_url column and assign it to the local environment variable REGISTRY_URL
+-- Copy the full URL from the repository_url column
 -- Example output: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
 ```
 
-Execute Docker commands locally:
+#### Login to Image Repository (Using PAT Token)
+
+Since many enterprise accounts disable username/password login, we recommend using **Programmatic Access Token (PAT)** to login to the image repository.
+
+**Step 1: Create PAT Token**
+
+Execute the following SQL in Snowflake to create a PAT:
+
+```sql
+-- Create a PAT Token with 7-day validity (adjust days as needed)
+ALTER USER ADD PROGRAMMATIC ACCESS TOKEN docker_registry_token
+    DAYS_TO_EXPIRY = 7
+    COMMENT = 'Token for Docker registry login';
+```
+
+After successful execution, the result will show `token_name` and `token_secret` columns. **Copy the Token value directly from the `token_secret` column**.
+
+> **Important:**
+> - `token_secret` is only displayed once at creation time - copy and save it immediately
+> - To delete a Token: `ALTER USER REMOVE PROGRAMMATIC ACCESS TOKEN docker_registry_token;`
+> - For more information, see [Snowflake PAT Documentation](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)
+
+**Step 2: Query Image Repository URL**
 
 ```bash
-# Set environment variables
-export SNOWFLAKE_ACCOUNT="your_account"
-export SNOWFLAKE_USER="your_user"
-# Use the repository_url column from the previous SQL as REGISTRY_URL
-export REGISTRY_URL="<copy repository_url from SHOW IMAGE REPOSITORIES result>"
+# Query using Snowflake CLI
+snow sql -c <your_connection> -q "SHOW IMAGE REPOSITORIES;"
 
-# 1. Login to Snowflake image repository
-docker login ${REGISTRY_URL%%/*} -u $SNOWFLAKE_USER
+# Or execute in Snowflake Worksheet
+# SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
+```
 
-# 2. Build Docker image
+Copy the `repository_url` column value from the result, e.g., `xxx-xxx.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo`
+
+**Step 3: Login to Docker Registry with PAT Token**
+
+```bash
+# Replace <PAT_TOKEN> with the Token from Step 1
+# Replace <REGISTRY_HOST> with the domain part of repository_url
+# Replace <YOUR_USERNAME> with your Snowflake username
+
+echo "<PAT_TOKEN>" | docker login <REGISTRY_HOST> -u <YOUR_USERNAME> --password-stdin
+```
+
+**Example:**
+
+```bash
+echo "eyJraWQiOiIz..." | docker login xxx-xxx.registry.snowflakecomputing.cn -u MY_USER --password-stdin
+```
+
+> **Notes:**
+> - Username is your **Snowflake username** (the user who created the PAT)
+> - Password is the **PAT Token** (not your Snowflake login password)
+> - The user/role must have `READ, WRITE ON IMAGE REPOSITORY` privileges
+
+#### Build and Push Image
+
+After completing `docker login`, execute the following steps:
+
+```bash
+# Set environment variable (copy repository_url from SHOW IMAGE REPOSITORIES result)
+export REGISTRY_URL="<org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo"
+
+# 1. Build Docker image
 cd spcs_china/model_service
 docker build -t qwen-service:latest .
 
-# 3. Tag and push image
+# 2. Tag and push image
 docker tag qwen-service:latest ${REGISTRY_URL}/qwen-service:latest
 docker push ${REGISTRY_URL}/qwen-service:latest
 
-# 4. Verify upload
-snow sql -q "SHOW IMAGES IN IMAGE REPOSITORY SPCS_CHINA.MODEL_SERVICE.MODEL_SERVICE_REPO;"
+# 3. Verify upload
+snow sql -c <your_connection> -q "SHOW IMAGES IN IMAGE REPOSITORY SPCS_CHINA.MODEL_SERVICE.MODEL_SERVICE_REPO;"
 ```
 
 ### Step 4: Create SPCS Service
