@@ -292,71 +292,48 @@ CREATE IMAGE REPOSITORY IF NOT EXISTS MODEL_SERVICE_REPO
 
 -- 获取仓库 URL
 SHOW IMAGE REPOSITORIES LIKE 'MODEL_SERVICE_REPO';
--- 从结果中的 repository_url 列复制完整 URL，并赋值给本地环境变量 REGISTRY_URL
+-- 从结果中的 repository_url 列复制完整 URL
 -- 示例输出: <org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo
 ```
 
-在本地执行 Docker/Snowflake CLI 命令：
+#### 登录镜像仓库
+
+在本地执行以下命令登录 Snowflake 镜像仓库：
 
 ```bash
-# 设置环境变量
-export SNOWFLAKE_ACCOUNT="your_account"
-export REGISTRY_URL="<从 SHOW IMAGE REPOSITORIES 结果中复制的 repository_url>"
+# 1. 查询 Image Repositories，获取 repository_url
+snow sql -c <your_connection> -q "SHOW IMAGE REPOSITORIES;"
+
+# 2. 获取 registry token
+snow spcs image-registry token --connection <your_connection>
+# 输出示例: eyJraWQiOiIz...（JWT token）
+
+# 3. 使用 token 登录 Docker Registry
+# 将 <REGISTRY_HOST> 替换为 repository_url 的域名部分（如 xxx-xxx.registry.snowflakecomputing.cn）
+# 将 <TOKEN> 替换为上一步获取的 token
+echo "<TOKEN>" | docker login <REGISTRY_HOST> -u SNOW_PROD_USER --password-stdin
 ```
 
-#### 推荐方式一：使用 Snowflake CLI 生成 registry token（适用于 SSO / key pair / OAuth）
-
-这种方式对 **禁用用户名密码** 的账户最通用，只要能用 Snowflake CLI 连上 Snowflake（SSO、key pair 等都可以）。
-
-1. 安装并配置 [Snowflake CLI (snow)](https://docs.snowflake.com/en/developer-guide/snowflake-cli-v2/index)，保证可以用你们的认证方式连上 Snowflake。
-
-2. 通过 CLI 为 Docker 生成镜像仓库专用 token，并登录：
+**示例（请替换为您的实际值）：**
 
 ```bash
-# 使用配置好的 connection（例如 default 或 spcs_conn）
-snow spcs image-registry token --connection spcs_conn --format=JSON \
-  | jq -r '.token' \
-  | docker login ${REGISTRY_URL%%/*} -u 0sessiontoken --password-stdin
+# 获取 token 并登录（一行命令）
+snow spcs image-registry token --connection my_conn | docker login xxx-xxx.registry.snowflakecomputing.cn -u SNOW_PROD_USER --password-stdin
 ```
 
 > **说明：**
-> - 用户名必须是固定值 `0sessiontoken`；
-> - 密码是 `snow spcs image-registry token` 输出的 token；
-> - 该用户/角色需要对仓库有 `READ, WRITE ON IMAGE REPOSITORY` 权限。
-
-#### 推荐方式二：使用 Snowflake Programmatic Access Token（PAT）
-
-如果账户已经启用了 [Programmatic Access Token (PAT)](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)，也可以直接用 PAT 登录镜像仓库：
-
-```bash
-# 假设你已经在 Snowflake 为某个用户生成了 PAT
-export PAT_TOKEN="<Snowflake Programmatic Access Token>"
-
-docker login ${REGISTRY_URL%%/*} -u USER -p "$PAT_TOKEN"
-```
-
-> **注意：**
-> - 用户名必须是大写的 `USER`（不是 Snowflake 登录名）；
-> - PAT 对应的用户/角色需要对目标 IMAGE REPOSITORY 拥有 `READ, WRITE` 权限；
-> - 如果用户名不是 `USER` 或 PAT 已过期，会导致 "access token 无效" 错误。
-
-#### （不推荐）用户名/密码方式
-
-只有在账户 **允许用户名/密码登录** 且满足 MFA 要求时，才可以使用用户名/密码方式登录镜像仓库。例如：
-
-```bash
-export SNOWFLAKE_USER="your_user"
-
-docker login ${REGISTRY_URL%%/*} -u "$SNOWFLAKE_USER"
-```
-
-> 由于很多企业账户禁用了密码登录，或者必须通过 MFA，这种方式在实际环境中经常不可用，因此本项目推荐优先使用 **方式一（registry token）** 或 **方式二（PAT）**。
+> - 用户名固定为 `SNOW_PROD_USER`
+> - 密码是 `snow spcs image-registry token` 输出的 JWT token
+> - 该用户/角色需要对仓库有 `READ, WRITE ON IMAGE REPOSITORY` 权限
 
 #### 构建与推送镜像
 
-完成 `docker login` 后，后续构建与推送步骤保持不变：
+完成 `docker login` 后，执行以下步骤：
 
 ```bash
+# 设置环境变量（从 SHOW IMAGE REPOSITORIES 结果中复制 repository_url）
+export REGISTRY_URL="<org>-<account>.registry.snowflakecomputing.cn/spcs_china/model_service/model_service_repo"
+
 # 1. 构建 Docker 镜像
 cd spcs_china/model_service
 docker build -t qwen-service:latest .
@@ -366,7 +343,7 @@ docker tag qwen-service:latest ${REGISTRY_URL}/qwen-service:latest
 docker push ${REGISTRY_URL}/qwen-service:latest
 
 # 3. 验证上传
-snow sql -q "SHOW IMAGES IN IMAGE REPOSITORY SPCS_CHINA.MODEL_SERVICE.MODEL_SERVICE_REPO;"
+snow sql -c <your_connection> -q "SHOW IMAGES IN IMAGE REPOSITORY SPCS_CHINA.MODEL_SERVICE.MODEL_SERVICE_REPO;"
 ```
 
 ### Step 4: 创建 SPCS 服务
