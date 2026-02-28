@@ -435,6 +435,202 @@ ALTER SERVICE QWEN_MODEL_SERVICE RESUME;
 
 ---
 
+## 🗂️ Snowflake China 资源清单
+
+本项目在 Snowflake 中国区环境中创建以下资源。根据部署方案的不同，创建的资源也有所区别。
+
+### 方案一：外部 API 方案（语义模型生成器 + 智能分析助手）
+
+> 部署脚本：`sis_setup/china_setup.sql` 和 `agent_intelligence/setup_qwen_udf.sql`
+
+| 资源类型 | 资源名称 | 用途说明 |
+|---------|---------|---------|
+| **Database** | `CORTEX_ANALYST_SEMANTICS` | 存储语义模型生成器相关对象 |
+| **Schema** | `SEMANTIC_MODEL_GENERATOR` | 语义模型生成器的 Schema |
+| **Network Rule** | `qwen_api_network_rule` | 出站网络规则，允许访问 DashScope/DeepSeek/Moonshot API |
+| **Secret** | `qwen_api_secret` | 存储 LLM API Key（通义千问、DeepSeek 等） |
+| **External Access Integration** | `qwen_api_integration` | 外部访问集成，关联网络规则和 Secret，允许 UDF 调用外部 API |
+| **UDF** | `QWEN_COMPLETE(model, prompt)` | Python UDF，调用外部 LLM API 生成文本 |
+| **Stage** | `STREAMLIT_STAGE` | 存储 Streamlit 应用文件（Python 代码、配置等） |
+| **Streamlit App** | `SEMANTIC_MODEL_GENERATOR` | 语义模型生成器 Streamlit 应用 |
+| **Stored Procedure** | `ZIP_SRC_FILES(...)` | 辅助存储过程，用于压缩 Stage 中的源文件 |
+| **Stored Procedure** | `GENERATE_SEMANTIC_FILE(...)` | 核心存储过程，自动生成语义模型 YAML 文件 |
+
+**网络规则允许的域名：**
+```
+dashscope.aliyuncs.com:443     # 通义千问 DashScope API
+api.deepseek.com:443           # DeepSeek API
+api.moonshot.cn:443            # Kimi/Moonshot API
+```
+
+---
+
+### 方案二：SPCS 私有化方案
+
+> 部署脚本：`spcs_china/setup_sql/01-05_*.sql`
+
+| 资源类型 | 资源名称 | 用途说明 |
+|---------|---------|---------|
+| **Database** | `SPCS_CHINA` | 存储 SPCS 私有化 LLM 服务相关对象 |
+| **Schema** | `MODEL_SERVICE` | 模型服务的 Schema |
+| **Compute Pool** | `GPU_NV_S_POOL` | GPU 计算池（NVIDIA T4 16GB），用于运行模型推理容器 |
+| **Network Rule** | `modelscope_network_rule` | 出站网络规则，允许下载模型文件（HF-Mirror、ModelScope） |
+| **External Access Integration** | `modelscope_access_integration` | 外部访问集成，允许 SPCS 服务下载模型 |
+| **Image Repository** | `MODEL_SERVICE_REPO` | Docker 镜像仓库，存储 Qwen 服务镜像 |
+| **Stage** | `MODEL_SERVICE_STAGE` | 存储 SPCS 服务规范文件 |
+| **Service** | `QWEN_MODEL_SERVICE` | SPCS 容器服务，运行 Qwen 模型（vLLM 推理引擎） |
+| **Service Function UDF** | `QWEN_COMPLETE(prompt)` | Service Function，将 SQL 调用路由到 SPCS 服务 |
+
+**网络规则允许的域名（模型下载）：**
+```
+# HF-Mirror (推荐)
+hf-mirror.com:443
+cdn-lfs.hf-mirror.com:443
+
+# ModelScope (备用)
+modelscope.cn:443
+www.modelscope.cn:443
+cdn-lfs-cn-1.modelscope.cn:443
+cdn-lfs-cn-2.modelscope.cn:443
+```
+
+**Compute Pool 配置：**
+- 实例类型：`GPU_NV_S` (NVIDIA T4 16GB / A10 24GB)
+- 节点数：MIN=1, MAX=2
+- 自动暂停：600 秒无请求后自动暂停
+- 自动恢复：收到请求时自动恢复
+
+**SPCS Service 容器资源：**
+- CPU：2-4 核
+- 内存：8-14 GB
+- GPU：1 × NVIDIA T4/A10
+- 端口：8000 (API), 8001 (Proxy)
+
+---
+
+### 资源架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              Snowflake China Region                                  │
+│                                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                    方案一：外部 API 方案                                       │   │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │           CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR          │   │   │
+│  │  │  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────────┐  │   │   │
+│  │  │  │ STREAMLIT_STAGE │  │ QWEN_COMPLETE   │  │ GENERATE_SEMANTIC  │  │   │   │
+│  │  │  │ (App Files)     │  │ UDF (Python)    │  │ _FILE SP           │  │   │   │
+│  │  │  └────────┬────────┘  └────────┬────────┘  └────────────────────┘  │   │   │
+│  │  └───────────┼───────────────────┼────────────────────────────────────┘   │   │
+│  │              │                   │                                         │   │
+│  │              ▼                   ▼                                         │   │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │              qwen_api_integration (External Access)                  │   │   │
+│  │  │    Network Rule: qwen_api_network_rule + Secret: qwen_api_secret     │   │   │
+│  │  └──────────────────────────────┬──────────────────────────────────────┘   │   │
+│  │                                 │                                          │   │
+│  └─────────────────────────────────┼──────────────────────────────────────────┘   │
+│                                    ▼                                              │
+│                        ┌─────────────────────────┐                                │
+│                        │  外部 LLM API           │                                │
+│                        │  • DashScope (Qwen)     │                                │
+│                        │  • DeepSeek             │                                │
+│                        │  • Moonshot (Kimi)      │                                │
+│                        └─────────────────────────┘                                │
+│                                                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                    方案二：SPCS 私有化方案                                     │   │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │                    SPCS_CHINA.MODEL_SERVICE                          │   │   │
+│  │  │  ┌──────────────────┐  ┌─────────────────┐  ┌────────────────────┐ │   │   │
+│  │  │  │ MODEL_SERVICE    │  │ QWEN_COMPLETE   │  │ MODEL_SERVICE      │ │   │   │
+│  │  │  │ _REPO (镜像仓库)  │  │ UDF (Svc Func)  │  │ _STAGE             │ │   │   │
+│  │  │  └──────────────────┘  └────────┬────────┘  └────────────────────┘ │   │   │
+│  │  └─────────────────────────────────┼──────────────────────────────────┘   │   │
+│  │                                    │                                       │   │
+│  │                                    ▼                                       │   │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │                     QWEN_MODEL_SERVICE (SPCS)                        │   │   │
+│  │  │  ┌───────────────────────────────────────────────────────────────┐  │   │   │
+│  │  │  │                   GPU_NV_S_POOL (T4/A10 GPU)                   │  │   │   │
+│  │  │  │  ┌─────────────────────────────────────────────────────────┐  │  │   │   │
+│  │  │  │  │  qwen-service Container                                  │  │  │   │   │
+│  │  │  │  │  ┌─────────────────┐    ┌─────────────────────────────┐ │  │  │   │   │
+│  │  │  │  │  │ Snowflake Proxy │───▶│  vLLM + Qwen2.5-1.5B        │ │  │  │   │   │
+│  │  │  │  │  │ (Port 8001)     │    │  (Port 8000)                │ │  │  │   │   │
+│  │  │  │  │  └─────────────────┘    └─────────────────────────────┘ │  │  │   │   │
+│  │  │  │  └─────────────────────────────────────────────────────────┘  │  │   │   │
+│  │  │  └───────────────────────────────────────────────────────────────┘  │   │   │
+│  │  │                                 │                                    │   │   │
+│  │  │                                 │ modelscope_access_integration      │   │   │
+│  │  │                                 ▼                                    │   │   │
+│  │  │  ┌───────────────────────────────────────────────────────────────┐  │   │   │
+│  │  │  │              模型下载源 (首次启动)                              │  │   │   │
+│  │  │  │        HF-Mirror (hf-mirror.com) / ModelScope                 │  │   │   │
+│  │  │  └───────────────────────────────────────────────────────────────┘  │   │   │
+│  │  └─────────────────────────────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 资源清理
+
+**清理外部 API 方案资源：**
+```sql
+-- 删除 Streamlit 应用
+DROP STREAMLIT IF EXISTS CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.SEMANTIC_MODEL_GENERATOR;
+
+-- 删除存储过程
+DROP PROCEDURE IF EXISTS CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.GENERATE_SEMANTIC_FILE(STRING, STRING, INT, BOOLEAN, ARRAY);
+DROP PROCEDURE IF EXISTS CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.ZIP_SRC_FILES(STRING, STRING, STRING, STRING, STRING, STRING);
+
+-- 删除 UDF
+DROP FUNCTION IF EXISTS CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.QWEN_COMPLETE(VARCHAR, VARCHAR);
+
+-- 删除 Stage
+DROP STAGE IF EXISTS CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.STREAMLIT_STAGE;
+
+-- 删除外部访问集成、Secret 和网络规则
+DROP EXTERNAL ACCESS INTEGRATION IF EXISTS qwen_api_integration;
+DROP SECRET IF EXISTS CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.qwen_api_secret;
+DROP NETWORK RULE IF EXISTS CORTEX_ANALYST_SEMANTICS.SEMANTIC_MODEL_GENERATOR.qwen_api_network_rule;
+
+-- 删除数据库 (慎用！会删除所有对象)
+-- DROP DATABASE IF EXISTS CORTEX_ANALYST_SEMANTICS;
+```
+
+**清理 SPCS 私有化方案资源：**
+```sql
+-- 先停止服务
+ALTER SERVICE SPCS_CHINA.MODEL_SERVICE.QWEN_MODEL_SERVICE SUSPEND;
+
+-- 删除 UDF
+DROP FUNCTION IF EXISTS SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE(VARCHAR);
+
+-- 删除服务
+DROP SERVICE IF EXISTS SPCS_CHINA.MODEL_SERVICE.QWEN_MODEL_SERVICE;
+
+-- 删除外部访问集成和网络规则
+DROP EXTERNAL ACCESS INTEGRATION IF EXISTS modelscope_access_integration;
+DROP NETWORK RULE IF EXISTS SPCS_CHINA.MODEL_SERVICE.modelscope_network_rule;
+
+-- 删除镜像仓库和 Stage
+DROP IMAGE REPOSITORY IF EXISTS SPCS_CHINA.MODEL_SERVICE.MODEL_SERVICE_REPO;
+DROP STAGE IF EXISTS SPCS_CHINA.MODEL_SERVICE.MODEL_SERVICE_STAGE;
+
+-- 删除计算池 (确保无服务使用)
+DROP COMPUTE POOL IF EXISTS GPU_NV_S_POOL;
+
+-- 删除数据库 (慎用！会删除所有对象)
+-- DROP DATABASE IF EXISTS SPCS_CHINA;
+```
+
+---
+
 ## 📚 参考资料
 
 - [Snowflake Cortex Analyst 文档](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst)
