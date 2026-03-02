@@ -8,15 +8,28 @@
 
 ---
 
+## 🎯 支持的模型
+
+| 模型 | 大小 | 说明 | 部署脚本 |
+|-----|------|------|---------|
+| **Qwen/Qwen2.5-1.5B-Instruct** | ~3GB | 阿里通义千问，中英文通用 | `deploy.sh` |
+| **deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B** | ~3GB | DeepSeek-R1 蒸馏版，支持推理链 | `deploy_deepseek.sh` |
+| deepseek-ai/deepseek-coder-1.3b-instruct | ~2.5GB | DeepSeek 代码生成优化 | `deploy_deepseek.sh` |
+
+---
+
 ## 📁 项目结构
 
 ```
 spcs_china/
 ├── README.md                    # 项目文档 (中文)
 ├── README_EN.md                 # 项目文档 (English)
-├── deploy.sh                    # 一键部署脚本
-├── check_status.sh              # 服务状态检查脚本
-├── streamlit_example.py         # Streamlit 示例应用
+├── deploy.sh                    # Qwen 一键部署脚本
+├── deploy_deepseek.sh           # DeepSeek 一键部署脚本
+├── check_status.sh              # Qwen 服务状态检查
+├── check_deepseek_status.sh     # DeepSeek 服务状态检查
+├── DEPLOY_DEEPSEEK.md           # DeepSeek 部署说明
+├── streamlit_example.py         # Streamlit 示例应用 (支持多模型管理)
 │
 ├── model_service/               # 模型服务核心代码
 │   ├── Dockerfile               # Docker 镜像构建文件 (基于 vLLM)
@@ -52,10 +65,11 @@ spcs_china/
 
 我们设计了一个基于 **Snowflake Container Services (SPCS)** 的自托管 LLM 方案：
 
-1. **使用开源模型**：部署阿里通义千问 (Qwen) 系列模型
+1. **使用开源模型**：支持 Qwen、DeepSeek 等多种开源模型
 2. **本地化部署**：模型完全运行在 Snowflake 平台内，数据不出数据平台
 3. **无缝集成**：通过 UDF 提供与 Cortex LLM 类似的调用体验
 4. **GPU 加速**：利用 SPCS 的 GPU 计算池实现高效推理
+5. **服务管理**：支持通过 Streamlit 应用管理服务（启动/暂停）
 
 ---
 
@@ -191,7 +205,7 @@ cdn-lfs-cn-2.modelscope.cn:443
 
 ## 🚀 快速开始
 
-### 一键部署
+### 一键部署 Qwen 模型
 
 ```bash
 # 设置环境变量
@@ -206,6 +220,21 @@ export SNOWFLAKE_USER="your_user"
 ./deploy.sh push     # 构建并推送
 ./deploy.sh sql      # 仅执行 SQL
 ```
+
+### 一键部署 DeepSeek 模型
+
+```bash
+# 使用 china_dev 连接部署 DeepSeek
+./deploy_deepseek.sh deploy
+
+# 其他命令
+./deploy_deepseek.sh status   # 查看状态
+./deploy_deepseek.sh logs     # 查看日志
+./deploy_deepseek.sh test     # 测试服务
+./deploy_deepseek.sh cleanup  # 清理资源
+```
+
+> 详细 DeepSeek 部署说明请参考 [DEPLOY_DEEPSEEK.md](./DEPLOY_DEEPSEEK.md)
 
 ### 手动部署步骤
 
@@ -401,11 +430,8 @@ spec:
           cpu: 4
           nvidia.com/gpu: 1
       readinessProbe:
-        httpGet:
-          path: /health
-          port: 8001
-        initialDelaySeconds: 120
-        periodSeconds: 30
+        port: 8001
+        path: /health
   endpoints:
     - name: qwen-api
       port: 8001
@@ -443,19 +469,36 @@ SELECT SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE(
 
 ## 📊 使用示例
 
-### 基础调用
+### Qwen 模型调用
 
 ```sql
 -- 简单问答
-SELECT QWEN_COMPLETE(
+SELECT SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE(
   '{"model":"Qwen/Qwen2.5-1.5B-Instruct","messages":[{"role":"user","content":"什么是数据仓库？"}]}'
 );
 
 -- 带系统提示词
-SELECT QWEN_COMPLETE(
+SELECT SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE(
   '{"model":"Qwen/Qwen2.5-1.5B-Instruct","messages":[
     {"role":"system","content":"你是一个数据分析专家"},
     {"role":"user","content":"如何优化 SQL 查询性能？"}
+  ]}'
+);
+```
+
+### DeepSeek 模型调用
+
+```sql
+-- DeepSeek-R1 问答 (带推理链)
+SELECT SPCS_CHINA.MODEL_SERVICE.DEEPSEEK_COMPLETE(
+  '{"model":"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B","messages":[{"role":"user","content":"解释什么是机器学习"}]}'
+);
+
+-- DeepSeek 代码生成
+SELECT SPCS_CHINA.MODEL_SERVICE.DEEPSEEK_COMPLETE(
+  '{"model":"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B","messages":[
+    {"role":"system","content":"你是一个编程专家"},
+    {"role":"user","content":"用 Python 写一个快速排序算法"}
   ]}'
 );
 ```
@@ -481,10 +524,12 @@ LIMIT 10;
 
 我们提供了完整的 Streamlit 示例应用 `streamlit_example.py`，包含：
 
-- 💬 交互式对话界面
+- 💬 交互式对话界面（支持 Qwen 和 DeepSeek 模型切换）
 - 📝 批量文本处理功能
 - 🔧 SQL 调用示例和测试工具
 - ⚙️ 可配置的参数（Temperature、Max Tokens 等）
+- 🎛️ **服务管理面板**：启动/暂停/查看状态
+- 💰 成本控制：一键暂停 GPU 服务节省成本
 
 **快速示例代码：**
 

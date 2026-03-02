@@ -20,8 +20,8 @@ spec:
       image: /spcs_china/model_service/model_service_repo/qwen-service:latest
       env:
         MODEL_NAME: "Qwen/Qwen2.5-1.5B-Instruct"
+        HF_ENDPOINT: "https://hf-mirror.com"
         MODELSCOPE_CACHE: "/app/models"
-        MODELSCOPE_DOMAIN: "modelscope.cn"
         MAX_NEW_TOKENS: "2048"
         WORKERS: "1"
       resources:
@@ -34,22 +34,11 @@ spec:
           cpu: 4
           nvidia.com/gpu: 1
       readinessProbe:
-        httpGet:
-          path: /health
-          port: 8000
-        initialDelaySeconds: 120
-        periodSeconds: 30
-        timeoutSeconds: 10
-      livenessProbe:
-        httpGet:
-          path: /health
-          port: 8000
-        initialDelaySeconds: 180
-        periodSeconds: 60
-        timeoutSeconds: 15
+        port: 8001
+        path: /health
   endpoints:
     - name: qwen-api
-      port: 8000
+      port: 8001
       public: false
 $$;
 

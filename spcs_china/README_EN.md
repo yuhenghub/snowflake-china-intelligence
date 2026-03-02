@@ -2,7 +2,19 @@
 
 **A core component of Snowflake China Intelligence**
 
+[中文版](./README.md) | English Version
+
 > A private LLM solution based on Snowflake Container Services (SPCS). Deploy and run open-source large language models within the Snowflake platform, ensuring data stays within the platform and meets enterprise compliance requirements.
+
+---
+
+## 🎯 Supported Models
+
+| Model | Size | Description | Deploy Script |
+|-------|------|-------------|---------------|
+| **Qwen/Qwen2.5-1.5B-Instruct** | ~3GB | Alibaba Qwen, Chinese & English | `deploy.sh` |
+| **deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B** | ~3GB | DeepSeek-R1 distilled, with reasoning chain | `deploy_deepseek.sh` |
+| deepseek-ai/deepseek-coder-1.3b-instruct | ~2.5GB | DeepSeek code generation optimized | `deploy_deepseek.sh` |
 
 ---
 
@@ -12,9 +24,12 @@
 spcs_china/
 ├── README.md                    # Documentation (Chinese)
 ├── README_EN.md                 # Documentation (English)
-├── deploy.sh                    # One-click deployment script
-├── check_status.sh              # Service status check script
-├── streamlit_example.py         # Streamlit example application
+├── deploy.sh                    # Qwen one-click deployment script
+├── deploy_deepseek.sh           # DeepSeek one-click deployment script
+├── check_status.sh              # Qwen service status check
+├── check_deepseek_status.sh     # DeepSeek service status check
+├── DEPLOY_DEEPSEEK.md           # DeepSeek deployment guide
+├── streamlit_example.py         # Streamlit example app (multi-model management)
 │
 ├── model_service/               # Model service core code
 │   ├── Dockerfile               # Docker image build file (based on vLLM)
@@ -50,10 +65,11 @@ This solution provides powerful AI capabilities for China region customers based
 
 We designed a self-hosted LLM solution based on **Snowflake Container Services (SPCS)**:
 
-1. **Use Open-Source Models**: Deploy Alibaba's Qwen series models
+1. **Use Open-Source Models**: Support multiple models including Qwen and DeepSeek
 2. **Local Deployment**: Models run entirely within the Snowflake platform, data stays within the platform
 3. **Seamless Integration**: Provide a Cortex LLM-like experience via UDF
 4. **GPU Acceleration**: Leverage SPCS GPU compute pools for efficient inference
+5. **Service Management**: Manage services (start/stop) via Streamlit app
 
 ---
 
@@ -189,7 +205,7 @@ cdn-lfs-cn-2.modelscope.cn:443
 
 ## 🚀 Quick Start
 
-### One-Click Deployment
+### One-Click Deploy Qwen Model
 
 ```bash
 # Set environment variables
@@ -204,6 +220,21 @@ export SNOWFLAKE_USER="your_user"
 ./deploy.sh push     # Build and push
 ./deploy.sh sql      # Execute SQL only
 ```
+
+### One-Click Deploy DeepSeek Model
+
+```bash
+# Deploy DeepSeek using china_dev connection
+./deploy_deepseek.sh deploy
+
+# Other commands
+./deploy_deepseek.sh status   # Check status
+./deploy_deepseek.sh logs     # View logs
+./deploy_deepseek.sh test     # Test service
+./deploy_deepseek.sh cleanup  # Cleanup resources
+```
+
+> For detailed DeepSeek deployment instructions, see [DEPLOY_DEEPSEEK.md](./DEPLOY_DEEPSEEK.md)
 
 ### Manual Deployment Steps
 
@@ -399,11 +430,8 @@ spec:
           cpu: 4
           nvidia.com/gpu: 1
       readinessProbe:
-        httpGet:
-          path: /health
-          port: 8001
-        initialDelaySeconds: 120
-        periodSeconds: 30
+        port: 8001
+        path: /health
   endpoints:
     - name: qwen-api
       port: 8001
@@ -441,19 +469,36 @@ SELECT SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE(
 
 ## 📊 Usage Examples
 
-### Basic Usage
+### Qwen Model Usage
 
 ```sql
 -- Simple Q&A
-SELECT QWEN_COMPLETE(
+SELECT SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE(
   '{"model":"Qwen/Qwen2.5-1.5B-Instruct","messages":[{"role":"user","content":"What is a data warehouse?"}]}'
 );
 
 -- With system prompt
-SELECT QWEN_COMPLETE(
+SELECT SPCS_CHINA.MODEL_SERVICE.QWEN_COMPLETE(
   '{"model":"Qwen/Qwen2.5-1.5B-Instruct","messages":[
     {"role":"system","content":"You are a data analytics expert"},
     {"role":"user","content":"How to optimize SQL query performance?"}
+  ]}'
+);
+```
+
+### DeepSeek Model Usage
+
+```sql
+-- DeepSeek-R1 Q&A (with reasoning chain)
+SELECT SPCS_CHINA.MODEL_SERVICE.DEEPSEEK_COMPLETE(
+  '{"model":"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B","messages":[{"role":"user","content":"Explain what is machine learning"}]}'
+);
+
+-- DeepSeek code generation
+SELECT SPCS_CHINA.MODEL_SERVICE.DEEPSEEK_COMPLETE(
+  '{"model":"deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B","messages":[
+    {"role":"system","content":"You are a programming expert"},
+    {"role":"user","content":"Write a quick sort algorithm in Python"}
   ]}'
 );
 ```
@@ -479,10 +524,12 @@ LIMIT 10;
 
 We provide a complete Streamlit example application `streamlit_example.py`, including:
 
-- 💬 Interactive chat interface
+- 💬 Interactive chat interface (supports Qwen and DeepSeek model switching)
 - 📝 Batch text processing
 - 🔧 SQL call examples and testing tools
 - ⚙️ Configurable parameters (Temperature, Max Tokens, etc.)
+- 🎛️ **Service Management Panel**: Start/Stop/View status
+- 💰 Cost Control: One-click pause GPU services to save costs
 
 **Quick Example Code:**
 
